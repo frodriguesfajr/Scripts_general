@@ -2,3 +2,7 @@
 /tle_files/56215/56215_20250126_152626.tle
 /vcub1_sp_vs_tle.py
 /Kalman_mmwave_hybrid_precoding.asv
+/SoftGNSS-python/GNSS_signal_records/GPSdata-DiscreteComponents-fs38_192-if9_55.bin
+/SoftGNSS-python/__pycache__/*.pyc
+/SoftGNSS-python/geoFunctions/__pycache__/*.pyc
+/SoftGNSS-python/*.npy
