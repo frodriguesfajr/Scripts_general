@@ -108,7 +108,6 @@ for currMeasNr = 1:measNrSum
     % Calculate pseudorange
     transmitTime = inf(1, settings.numberOfChannels);
     codePhase = zeros(length(activeChnList),1);
-    % disp(codePhase)
     
     for channelNr = activeChnList
     % Find index of I_P stream whose integration contains current 
@@ -127,11 +126,11 @@ for currMeasNr = 1:measNrSum
         % return
         % Update the phasestep based on code freq and sampling frequency
         codePhaseStep = trackResults(channelNr).codeFreq(index) / settings.samplingFreq; 
-        % disp(codePhaseStep)
         % Code phase from start of a PRN code to current measurement sample location 
         codePhase(channelNr)  = (trackResults(channelNr).remCodePhase(index) +  ...
             codePhaseStep * (currMeasSample - ...
             trackResults(channelNr).absoluteSample(index) ));
+        
         % disp(trackResults(channelNr).remCodePhase(index))
         % disp(trackResults(channelNr).absoluteSample(index))
         % disp(codePhase(channelNr))
@@ -156,18 +155,18 @@ for currMeasNr = 1:measNrSum
     % settings.startOffset
     % disp(localTime)
     % disp(transmitTime)
+    
     if (localTime == inf)
          maxTime   = max(transmitTime(activeChnList));
          % disp(transmitTime)         
          localTime = maxTime + settings.startOffset/1000;  
-         % disp(localTime)
+         
     end
-    % disp(localTime)
-    % return
+    % disp(transmitTime(activeChnList))
     %--- Convert travel time to a distance ------------------------------------
     % The speed of light must be converted from meters per second to meters
     % per millisecond. 
-    pseudoranges    = (localTime - transmitTime) * settings.c; 
+    pseudoranges    = (localTime - transmitTime) * settings.c;
     navSolutions_rawP(:, currMeasNr) = pseudoranges;
     navSolutions_transmitTime(activeChnList, currMeasNr) = transmitTime(activeChnList);
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -293,6 +292,7 @@ for currMeasNr = 1:measNrSum
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     navSolutions_satClkCorr(activeChnList, currMeasNr) = satClkCorr;
     % disp(satClkCorr)
+    % disp(satClkCorr)
     if size(activeChnList, 2) > 3
         clkCorrRawP = navSolutions_rawP(activeChnList, currMeasNr)' + satClkCorr * settings.c;
         % disp(clkCorrRawP)
@@ -309,7 +309,7 @@ for currMeasNr = 1:measNrSum
         omc     = zeros(nmbOfSatellites, 1);
         az      = zeros(1, nmbOfSatellites);
         el      = az;
-        Rot_X_up = zeros(3, nmbOfSatellites); 
+        Rot_X_up = zeros(3, nmbOfSatellites);
         %=== Iteratively find receiver position ===================================
         for iter = 1:nmbOfIterations
              for i = 1:nmbOfSatellites
@@ -321,7 +321,7 @@ for currMeasNr = 1:measNrSum
                  else
                      % disp(iter)
                      % disp(pos)
-                     
+                     % return
                      %--- Update equations -----------------------------------------
                      rho2 = (X(1, i) - pos(1))^2 + (X(2, i) - pos(2))^2 + ...
                          (X(3, i) - pos(3))^2;
@@ -392,7 +392,7 @@ for currMeasNr = 1:measNrSum
                      % first guess
                      % P is distance from spin axis
                      P = sqrt(X_togeod^2+Y_togeod^2);
-                     
+                     % disp(P)
                      % direct calculation of longitude
                      if P > 1.e-20
                          dlambda = atan2(Y_togeod,X_togeod) * rtd;
@@ -419,7 +419,6 @@ for currMeasNr = 1:measNrSum
                          return
                      end
                      h_trop = r - a*(1-sinphi*sinphi/finv);
-
                      
                      % iterate
                      for iii = 1:maxit
@@ -448,6 +447,7 @@ for currMeasNr = 1:measNrSum
                      phi = dphi;
                      lambda = dlambda;
                      h = h_trop;
+                     
                      %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
                      cl  = cos(lambda * dtr);
                      sl  = sin(lambda * dtr);
@@ -573,16 +573,21 @@ for currMeasNr = 1:measNrSum
                      % return
                  end % if iter == 1 ... ... else 
                  
+                 % disp(Rot_X)
+                 % disp(pos(1:3))
+                 
                  %--- Apply the corrections ----------------------------------------
                  % disp(obs(i))
                  diff_rot_x = Rot_X - pos(1:3);
+                 % disp(diff_rot_x)
                  % disp(pos(4))
                  % disp(norm(diff_rot_x, 'fro'))
                  norm_value = norm(diff_rot_x, 'fro');
+                 
                  % disp(norm_value)
                  omc(i) = ( obs(i) - norm(Rot_X - pos(1:3), 'fro') - pos(4) - trop );
                  % disp(omc(i))
-                 % disp(omc(i))
+                 %disp(omc(i))
                  % disp(obs(i))
                  % disp(norm(Rot_X - pos(1:3), 'fro') -  )
                  % return
@@ -592,14 +597,17 @@ for currMeasNr = 1:measNrSum
                      (-(Rot_X(2) - pos(2))) / norm(Rot_X - pos(1:3), 'fro') ...
                      (-(Rot_X(3) - pos(3))) / norm(Rot_X - pos(1:3), 'fro') ...
                      1 ];
-                 disp([iter,i])
-                 disp(Rot_X)
-                 disp(norm_value)
-                 if iter==2
-                     % disp(iter)
-                     
-                     return
-                 end
+                 % return
+                 % if iter==2
+                 %     % disp(iter)
+                 %     disp([iter,i])
+                 %     % disp(obs(i))
+                 %     disp(omc(i))
+                 % 
+                 % 
+                 % 
+                 %     return
+                 % end
                  % disp([i, A(i, :)])
                  % disp(A(i, :))
                  % A_2 =  [ -(Rot_X(1) - pos(1))/norm_value ...
@@ -622,14 +630,16 @@ for currMeasNr = 1:measNrSum
                 fprintf('Cannot get a converged solution! \n');
                 return
             end
-            disp(rank(A))
+            % disp(rank(A))
+            % return
             %--- Find position update (in the least squares sense)-----------------
             x   = A \ omc;
             %--- Apply position update --------------------------------------------
             pos = pos + x;
+            % disp(iter)
             % disp(pos)           
         end % for iter = 1:nmbOfIterations
-        return
+        
         %--- Fixing result --------------------------------------------------------
         pos = pos';
         % Saves satellite position for more accurate satellite position for DPE 
@@ -652,6 +662,15 @@ for currMeasNr = 1:measNrSum
 
 
         xyzdt = pos;
+        disp(xyzdt)
+        % disp(dop(1))
+        % disp(satClkCorr'* settings.c - xyzdt(4))
+        % disp(navSolutions_correctedP(activeChnList, currMeasNr))
+        % navSolutions_correctedP(activeChnList, currMeasNr) = ...
+                %navSolutions_rawP(activeChnList, currMeasNr) + ...
+                %satClkCorr' * settings.c - xyzdt(4);
+
+        
         navSolutions_el(activeChnList, currMeasNr) = el;
         navSolutions_az(activeChnList, currMeasNr) = az;
         navSolutions_DOP(:, currMeasNr) = dop;
@@ -669,6 +688,7 @@ for currMeasNr = 1:measNrSum
         navSolutions_correctedP(activeChnList, currMeasNr) = ...
                 navSolutions_rawP(activeChnList, currMeasNr) + ...
                 satClkCorr' * settings.c - xyzdt(4);
+        
         [navSolutions_latitude(currMeasNr), ...
          navSolutions_longitude(currMeasNr), ...
          navSolutions_height(currMeasNr)] = cart2geo(...
@@ -677,6 +697,43 @@ for currMeasNr = 1:measNrSum
                                             navSolutions_Z(currMeasNr), ...
                                             5);
         
+        X = navSolutions_X(currMeasNr);
+        Y = navSolutions_Y(currMeasNr);
+        Z = navSolutions_Z(currMeasNr);
+        i = 5;
+        % disp([X,Y,Z,i])
+        %CART2GEO Conversion of Cartesian coordinates (X,Y,Z) to geographical
+        %coordinates (phi, lambda, h) on a selected reference ellipsoid.
+        %
+        %==========================================================================
+        a = [6378388 6378160 6378135 6378137 6378137];
+        f = [1/297 1/298.247 1/298.26 1/298.257222101 1/298.257223563];
+        lambda = atan2(Y,X);
+        ex2 = (2-f(i))*f(i)/((1-f(i))^2);
+        c = a(i)*sqrt(1+ex2);
+        phi = atan(Z/((sqrt(X^2+Y^2)*(1-(2-f(i)))*f(i))));
+        h = 0.1; oldh = 0;
+        iterations = 0;
+        while abs(h-oldh) > 1.e-12
+            oldh = h;
+            N = c/sqrt(1+ex2*cos(phi)^2);
+            phi = atan(Z/((sqrt(X^2+Y^2)*(1-(2-f(i))*f(i)*N/(N+h)))));
+            h = sqrt(X^2+Y^2)/cos(phi)-N;
+            iterations = iterations + 1;
+            if iterations > 100
+                fprintf('Failed to approximate h with desired precision. h-oldh: %e.\n', h-oldh);
+                 break;
+            end
+        end
+        phi = phi*180/pi;
+        lambda = lambda*180/pi;
+        % disp([phi, lambda, h])
+        % disp([navSolutions_latitude(currMeasNr), ...
+        %  navSolutions_longitude(currMeasNr), ...
+        %  navSolutions_height(currMeasNr)])
+        %%%%%%%%%%%%%% end cart2geo.m %%%%%%%%%%%%%%%%%%%
+
+        return
         navSolutions_utmZone = findUtmZone(navSolutions_latitude(currMeasNr), ...
                                        navSolutions_longitude(currMeasNr));        
         [navSolutions_E(currMeasNr), ...
@@ -684,6 +741,7 @@ for currMeasNr = 1:measNrSum
          navSolutions_U(currMeasNr)] = cart2utm(xyzdt(1), xyzdt(2), ...
                                                 xyzdt(3), ...
                                                 navSolutions_utmZone);
+        
     else
         disp(['   Measurement No. ', num2str(currMeasNr), ...
                        ': Not enough information for position solution.']);
