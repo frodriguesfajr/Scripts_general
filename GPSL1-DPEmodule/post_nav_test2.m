@@ -100,10 +100,6 @@ for currMeasNr = 1:measNrSum
     navSolutions_transmitTime(:, currMeasNr) = NaN(settings.numberOfChannels, 1);
     navSolutions_satClkCorr(:, currMeasNr) = NaN(settings.numberOfChannels, 1);                                                                  
     currMeasSample = sampleStart + measSampleStep*(currMeasNr-1);
-    % disp(currMeasSample)
-    % disp(currMeasNr)
-
-    % return
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % Calculate pseudorange
     transmitTime = inf(1, settings.numberOfChannels);
@@ -119,22 +115,12 @@ for currMeasNr = 1:measNrSum
             end 
         end
         index = index - 1; 
-        % disp(index)
-        % disp(currMeasSample)
-
-
-        % return
         % Update the phasestep based on code freq and sampling frequency
         codePhaseStep = trackResults(channelNr).codeFreq(index) / settings.samplingFreq; 
         % Code phase from start of a PRN code to current measurement sample location 
         codePhase(channelNr)  = (trackResults(channelNr).remCodePhase(index) +  ...
             codePhaseStep * (currMeasSample - ...
             trackResults(channelNr).absoluteSample(index) ));
-        
-        % disp(trackResults(channelNr).remCodePhase(index))
-        % disp(trackResults(channelNr).absoluteSample(index))
-        % disp(codePhase(channelNr))
-        % disp(codePhaseStep * (currMeasSample - trackResults(channelNr).absoluteSample(index)))
         % Transmitting Time (in unite of s)at current measurement sample location
         % codePhase/settings.codeLength: fraction part of a PRN code
         % index - subFrameStart(channelNr): integer number of PRN code
@@ -149,34 +135,27 @@ for currMeasNr = 1:measNrSum
                               subFrameStart(channelNr)) * ...
                               settings.codeLength * settings.DPE_cohInt /...
                               settings.codeFreqBasis + TOW(channelNr);
-        % disp(transmitTime(channelNr))
     end
+    
     % At first time of fix, local time is initialized by transmitTime and 
     % settings.startOffset
-    % disp(localTime)
-    % disp(transmitTime)
+
     
     if (localTime == inf)
          maxTime   = max(transmitTime(activeChnList));
-         % disp(transmitTime)         
          localTime = maxTime + settings.startOffset/1000;  
-         
     end
-    % disp(transmitTime(activeChnList))
+    
     %--- Convert travel time to a distance ------------------------------------
     % The speed of light must be converted from meters per second to meters
     % per millisecond. 
     pseudoranges    = (localTime - transmitTime) * settings.c;
     navSolutions_rawP(:, currMeasNr) = pseudoranges;
-    navSolutions_transmitTime(activeChnList, currMeasNr) = transmitTime(activeChnList);
+    navSolutions_transmitTime(activeChnList, currMeasNr) = ...
+        transmitTime(activeChnList);
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % [satPositions, satClkCorr] = satpos(transmitTime(activeChnList), ...
-    %                              [trackResults(activeChnList).PRN], eph_test);
-    %function [satPositions, satClkCorr] = satpos(transmitTime, prnList,eph)
     transmitTime = transmitTime(activeChnList);
     prnList = [trackResults(activeChnList).PRN];
-    % disp(prnList)
-    % return
     eph = eph_test;
     %% Initialize constants ===================================================
     numOfSatellites = size(prnList, 2);
@@ -207,7 +186,6 @@ for currMeasNr = 1:measNrSum
             eph(prn).a_f0 - ...
             eph(prn).T_GD;
         time = transmitTime(satNr) - satClkCorr(satNr);
-        
         %% Find satellite's position ----------------------------------------------
         % Restore semi-major axis
         a   = eph(prn).sqrtA * eph(prn).sqrtA;
@@ -291,11 +269,8 @@ for currMeasNr = 1:measNrSum
     end % for satNr = 1 : numOfSatellites
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     navSolutions_satClkCorr(activeChnList, currMeasNr) = satClkCorr;
-    % disp(satClkCorr)
-    % disp(satClkCorr)
     if size(activeChnList, 2) > 3
         clkCorrRawP = navSolutions_rawP(activeChnList, currMeasNr)' + satClkCorr * settings.c;
-        % disp(clkCorrRawP)
         %% leastSquarePos
         %=== Initialization =======================================================
         satpos = satPositions;
@@ -639,7 +614,6 @@ for currMeasNr = 1:measNrSum
             % disp(iter)
             % disp(pos)           
         end % for iter = 1:nmbOfIterations
-        
         %--- Fixing result --------------------------------------------------------
         pos = pos';
         % Saves satellite position for more accurate satellite position for DPE 
@@ -659,30 +633,21 @@ for currMeasNr = 1:measNrSum
         dop(4)  = sqrt(Q(3,3));                         % VDOP
         dop(5)  = sqrt(Q(4,4));                         % TDOP
         % % end  % if nargout  == 4
-
-
         xyzdt = pos;
-        disp(xyzdt)
-        % disp(dop(1))
-        % disp(satClkCorr'* settings.c - xyzdt(4))
-        % disp(navSolutions_correctedP(activeChnList, currMeasNr))
-        % navSolutions_correctedP(activeChnList, currMeasNr) = ...
-                %navSolutions_rawP(activeChnList, currMeasNr) + ...
-                %satClkCorr' * settings.c - xyzdt(4);
-
-        
         navSolutions_el(activeChnList, currMeasNr) = el;
         navSolutions_az(activeChnList, currMeasNr) = az;
         navSolutions_DOP(:, currMeasNr) = dop;
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         navSolutions_X(currMeasNr)  = xyzdt(1);
         navSolutions_Y(currMeasNr)  = xyzdt(2);
-        navSolutions_Z(currMeasNr)  = xyzdt(3);       
+        navSolutions_Z(currMeasNr)  = xyzdt(3);
         if (currMeasNr == 1)
         navSolutions_dt(currMeasNr) = 0;  % in unit of (m)
         else
             navSolutions_dt(currMeasNr) = xyzdt(4);  
         end
+        disp(navSolutions_Z(currMeasNr))
+        return
         navSolutions_currMeasSample(currMeasNr) = currMeasSample;
         satElev = navSolutions_el(:, currMeasNr)';
         navSolutions_correctedP(activeChnList, currMeasNr) = ...
