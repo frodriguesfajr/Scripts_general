@@ -7,6 +7,7 @@ load('navSolutions_dpe_sim.mat');  % Carrega a struct 'navSolutions'
 fid = 4;
 addpath ('C:\Repository\GPSL1-DPEmodule\include')
 addpath ('C:\Repository\GPSL1-DPEmodule\common') 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if (settings.msToProcess < 36000) 
     % Show the error message and exit
     disp('Record is to short. Exiting!');
@@ -14,22 +15,24 @@ if (settings.msToProcess < 36000)
     eph          = [];
     return
 end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 subFrameStart  = inf(1, settings.numberOfChannels);
 TOW  = inf(1, settings.numberOfChannels);
 activeChnList = find([trackResults.status] ~= '-');
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 for channelNr = activeChnList
     PRN = trackResults(channelNr).PRN;
     fprintf('Decoding NAV for PRN %02d -------------------- \n', PRN);
     try
-    [eph_test(PRN), subFrameStart(channelNr), TOW(channelNr)] = ...
+    [eph_ch(PRN), subFrameStart(channelNr), TOW(channelNr)] = ...
                                   NAVdecoding(trackResults(channelNr).I_P,...
-                                  settings);  
+                                  settings);
     catch
     end
-
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     try
-    if (isempty(eph_test(PRN).IODC) || isempty(eph_test(PRN).IODE_sf2) || ...
-        isempty(eph_test(PRN).IODE_sf3))
+    if (isempty(eph_ch(PRN).IODC) || isempty(eph_ch(PRN).IODE_sf2) || ...
+        isempty(eph_ch(PRN).IODE_sf3))
         activeChnList = setdiff(activeChnList, channelNr);
         fprintf('    Ephemeris decoding fails for PRN %02d !\n', PRN);
     else
@@ -39,7 +42,9 @@ for channelNr = activeChnList
         activeChnList = setdiff(activeChnList, channelNr);
         fprintf('    Ephemeris decoding fails for PRN %02d !\n', PRN);
     end
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if (isempty(activeChnList) || (size(activeChnList, 2) < 4))
     disp('Too few satellites with ephemeris data for postion calculations. Exiting!');
     navSolutions = [];
@@ -48,7 +53,7 @@ if (isempty(activeChnList) || (size(activeChnList, 2) < 4))
 end
 sampleStart = zeros(1, settings.numberOfChannels);
 sampleEnd = inf(1, settings.numberOfChannels);
-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 for channelNr = activeChnList
     sampleStart(channelNr) = ...
           trackResults(channelNr).absoluteSample(subFrameStart(channelNr));
@@ -102,7 +107,7 @@ for currMeasNr = 1:measNrSum
                      currMeasSample,localTime,activeChnList, settings);  
     navSolutions_transmitTime(activeChnList, currMeasNr) = transmitTime(activeChnList);
     [satPositions, satClkCorr] = satpos(transmitTime(activeChnList), ...
-                                 [trackResults(activeChnList).PRN], eph_test);
+                                 [trackResults(activeChnList).PRN], eph_ch);
     navSolutions_satClkCorr(activeChnList, currMeasNr) = satClkCorr;
     if size(activeChnList, 2) > 3
         clkCorrRawP = navSolutions_rawP(activeChnList, currMeasNr)' + satClkCorr * settings.c;
@@ -110,8 +115,6 @@ for currMeasNr = 1:measNrSum
                navSolutions_az(activeChnList, currMeasNr), ...
                navSolutions_DOP(:, currMeasNr),satPositions] =...
                        leastSquarePos(satPositions, clkCorrRawP, settings);
-        % disp('ok11')
-        % return
         navSolutions_X(currMeasNr)  = xyzdt(1);
         navSolutions_Y(currMeasNr)  = xyzdt(2);
         navSolutions_Z(currMeasNr)  = xyzdt(3);       
@@ -167,8 +170,6 @@ for currMeasNr = 1:measNrSum
     %     transmitTime(activeChnList),localTime,...
     %     settings,satElev,fid,xyzdt(4),satClkCorr);
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    disp('ok45')
-    return
     % function [navSolutions]=DPE_module...
     % (currMeasNr,navSolutions,activeChnList,trackResults,currMeasSample,...
     % satPositions,transmitTime,localTime,settings,satElev,fid,...
@@ -369,6 +370,7 @@ for currMeasNr = 1:measNrSum
         end % End for pre-calculating the corr values for all satellites
 % 
     else % Use MMT-DPE
+        
 
          for j=1:length(activeChnList)
              % === Obtain closest tracking measurements to the current =========
@@ -659,7 +661,9 @@ for currMeasNr = 1:measNrSum
     end % for alt = alt_search 
 
     % === Obtain DPE estimate =================================================
-    [~,barisan_yangmanaya] = max(temprecord_DPE_values(:,4));
+    
+    % [~,barisan_yangmanaya] = max(temprecord_DPE_values(:,4));
+    
     % barisan_yangmanaya holds the index of lat-long-height estimate of DPE
 
     % === Plot correlogram at DPE's estimated altitude ========================
@@ -869,7 +873,6 @@ for currMeasNr = 1:measNrSum
         (navSolutions.LLH_error(currMeasNr,2)));
     fprintf('Current 2D Error of LS      : %1f\n',...
         (navSolutions.LLH_error(currMeasNr,1)));
-    return
     GT_ECEF =  llh2xyz(settings.gt_llh.*[pi/180 pi/180 1]);
     navSolutions.LLH_error(currMeasNr,3)= ...
         sqrt(sum(([navSolutions.X(currMeasNr)...

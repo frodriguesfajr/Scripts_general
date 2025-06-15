@@ -27,6 +27,8 @@ for channelNr = activeChnList
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % function [eph, subFrameStart,TOW] = NAVdecoding(I_P_InputBits,settings)
     I_P_InputBits = trackResults(channelNr).I_P;
+    % disp(I_P_InputBits(1))
+    % return
     
     % findPreambles finds the first preamble occurrence in the bit stream of
     % each channel. The preamble is verified by check of the spacing between
@@ -215,13 +217,7 @@ for channelNr = activeChnList
 
             bits = I_P_InputBits(index_preamble(i)-40/settings.DPE_cohInt...
                 : (index_preamble(i) + (20 * 60) / settings.DPE_cohInt)-1)';
-            disp(i)
-            disp(index_preamble(i))
-            % disp(bits)
-            % return
-
             %--- Combine the 20 values of each bit ------------------------
-             
             if settings.DPE_cohInt < 20
                  bits = reshape(bits, 20 / settings.DPE_cohInt, ...
                      ((size(bits, 1) / 20)* settings.DPE_cohInt));
@@ -229,27 +225,29 @@ for channelNr = activeChnList
             else % Coherent integration is 20 ms
                  bits=bits';
             end
-            % 
-            % % Now threshold and make it -1 and +1
-            % bits(bits > 0)  = 1;
-            % bits(bits <= 0) = -1;
-            % 
-            % %--- Check the parity of the TLM and HOW words ----------------
-            % if (navPartyChk(bits(1:32)) ~= 0) && ...
-            %         (navPartyChk(bits(31:62)) ~= 0)
-            %     % Parity was OK. Record the preamble start position. Skip
-            %     % the rest of preamble pattern checking for this channel
-            %     % and process next channel.
-            % 
-            %     subFrameStart_new = index(i);
-            %     break;
-            % end % if parity is OK ...
+            % Now threshold and make it -1 and +1
+            bits(bits > 0)  = 1;
+            bits(bits <= 0) = -1;
+            
+            %--- Check the parity of the TLM and HOW words ----------------
+            if (navPartyChk(bits(1:32)) ~= 0) && ...
+                    (navPartyChk(bits(31:62)) ~= 0)
+                % Parity was OK. Record the preamble start position. Skip
+                % the rest of preamble pattern checking for this channel
+                % and process next channel.
+
+                subFrameStart_new = index(i);
+                break;
+            end % if parity is OK ...
+            % disp('aqui 56')
+            % return
+            
 
         end % if (~isempty(find(index2 == 6000)))
     end % for i = 1:size(index)
-    return
-    disp('aqui')
-    return
+    % return
+    % disp('aqui')
+    % return
     % Exclude channel from the active channel list if no valid preamble was
     % detected
     if subFrameStart_new == inf

@@ -23,7 +23,368 @@ for channelNr = activeChnList
     try
     [eph_test(PRN), subFrameStart(channelNr), TOW(channelNr)] = ...
                                   NAVdecoding(trackResults(channelNr).I_P,...
-                                  settings);  
+                                  settings);
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    % function [eph_mod, subFrameStart_mod,TOW_mod] = NAVdecoding(I_P_InputBits,settings)
+    % findPreambles finds the first preamble occurrence in the bit stream of
+    % each channel. The preamble is verified by check of the spacing 
+    % between preambles (6sec) and parity checking of the first two words
+    % in a subframe. At the same time function returns list of channels,
+    % that are in tracking state and with valid preambles in the nav 
+    % data stream.
+
+    %--- Initialize ephemeris structute  --------------------------------------
+    % This is in order to make sure variable 'eph' for each SV has a similar 
+    % structure when only one or even none of the three requisite messages
+    % is decoded for a given PRN.
+    I_P_InputBits = trackResults(channelNr).I_P;
+
+    eph_mod = eph_structure_init();
+
+    % Starting positions of the first message in the input bit stream
+    subFrameStart_mod = inf;
+    % 
+    % TOW of the first message
+    TOW_mod = inf;
+
+    %% Bit and frame synchronization ====================================
+    % Preamble search can be delayed to a later point in the tracking results
+    % to avoid noise due to tracking loop transients
+    searchStartOffset = 1000; 
+    % Try to change this parameter if the navigation message decoding fails
+    %--- Generate the preamble pattern ----------------------------------------
+    preamble_bits = [1 -1 -1 -1 1 -1 1 1];
+
+    % "Upsample" the preamble - make 20 vales per one bit. The preamble must be
+    % found with precision of a sample.
+
+    preamble_ms = kron(preamble_bits, ones(1, 20/settings.DPE_cohInt));
+
+    % Correlate tracking output with preamble =================================
+    % Read output from tracking. It contains the navigation bits. The start
+    % of record is skiped here to avoid tracking loop transients.
+    bits_ephem = I_P_InputBits(1 + searchStartOffset : end);
+
+    % Now threshold the output and convert it to -1 and +1
+    bits_ephem(bits_ephem > 0)  =  1;
+    bits_ephem(bits_ephem <= 0) = -1;
+    
+
+    % Correlate tracking output with the preamble
+    tlmXcorrResult = xcorr(bits_ephem, preamble_ms);
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    y_val = preamble_ms(:); % y was validated to be a vector, make it a column.
+    maxlagDefault = max(size(bits_ephem,2),size(y_val,1)) - 1;
+    maxlag = maxlagDefault;
+
+    % Perform the cross-correlation.
+    % Compute cross-correlation for vector inputs. Output is clipped based on
+    % maxlag but not padded if maxlag >= max(size(x,1),size(y,1)).
+    nx = numel(bits_ephem');
+    ny = numel(y_val);
+    m_mod = max(nx,ny);
+    maxlagDefault_mod = m_mod-1;
+    mxl_mod = min(maxlag,maxlagDefault_mod);
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    m_mod = 2*m_mod;
+    while true
+        r_mod = m_mod;
+        for p = [2 3 5 7]
+            while (r_mod > 1) && (mod(r_mod, p) == 0)
+                r_mod = r_mod / p;
+            end
+        end
+        if r_mod == 1
+            break;
+        end
+        m_mod = m_mod + 1;
+    end    
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    Y_mod = fft(y_val,m_mod,1);
+    X_mod = fft(bits_ephem',m_mod,1);
+    produto_XY = X_mod.*conj(Y_mod);
+    if isreal(bits_ephem') && isreal(y_val)
+        % disp('ok29')
+        c1_mod = ifft(produto_XY,[],1,'symmetric');
+    else
+        c1_mod = ifft(produto_XY,[],1);
+    end
+
+    disp(c1_mod(1:5))
+    disp('ok30')
+    return
+
+    % Keep only the lags we want and move negative lags before positive
+    % lags.
+    c_mod_new = [c1_mod(m_mod - mxl_mod + (1:mxl_mod)); c1_mod(1:mxl_mod+1)];    
+    tlmXcorrResult_mod4 = c_mod_new';
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+    disp(isequaln(tlmXcorrResult, tlmXcorrResult_mod4))
+    disp('ok45')
+    tlmXcorrResult = tlmXcorrResult_mod4;
+
+    % Find all starting points off all preamble like patterns =================
+    clear index
+    clear index2
+    
+    
+    xcorrLength = (length(tlmXcorrResult) +  1) /2;
+
+    %--- Find at what index/ms the preambles start ------------------------
+    if settings.DPE_cohInt == 1
+
+        index = find(...
+            abs(tlmXcorrResult(xcorrLength : xcorrLength * 2 - 1)) > 153)' + ...
+            searchStartOffset;
+
+    else % Coherent integration is higher than 1 ms
+
+        index = find(...
+        abs(tlmXcorrResult(xcorrLength : xcorrLength * 2 - 1)) > 6)' + ...
+        searchStartOffset;
+
+    end
+    
+    % Analyze detected preamble like patterns ================================
+    for i = 1:size(index) % For each occurrence
+
+        %--- Find distances in time between this occurrence and the rest of
+        %preambles like patterns. If the distance is 6000 milliseconds (one
+        %subframe), the do further verifications by validating the parities
+        %of two GPS words
+
+        index2 = index - index(i);
+        
+
+        if (~isempty(find(index2 == 6000/settings.DPE_cohInt, 1)))
+
+            %=== Re-read bit values for preamble verification ==============
+            % Preamble occurrence is verified by checking the parity of
+            % the first two words in the subframe. Now it is assumed that
+            % bit boundaries a known. Therefore the bit values over 20ms are
+            % combined to increase receiver performance for noisy signals.
+            % in Total 62 bits mast be read :
+            % 2 bits from previous subframe are needed for parity checking;
+            % 60 bits for the first two 30bit words (TLM and HOW words).
+            % The index is pointing at the start of TLM word.
+            int_1 = index(i)-40/settings.DPE_cohInt;
+            int_2 = index(i) + (20 * 60) / settings.DPE_cohInt;
+            int_3 = (int_1+1:int_2)-1;
+
+
+            bits_ephem = I_P_InputBits(index(i)-40/settings.DPE_cohInt...
+                : (index(i) + (20 * 60) / settings.DPE_cohInt)-1)';
+            bits_100 = I_P_InputBits(int_3);
+
+            %--- Combine the 20 values of each bit ------------------------
+            if settings.DPE_cohInt < 20
+                bits_ephem = reshape(bits_ephem, 20 / settings.DPE_cohInt, ...
+                    ((size(bits_ephem, 1) / 20)* settings.DPE_cohInt));
+                bits_ephem = sum(bits_ephem,1); 
+            else % Coherent integration is 20 ms
+                bits_ephem=bits_ephem';
+            end
+            
+
+            % Now threshold and make it -1 and +1
+            bits_ephem(bits_ephem > 0)  = 1;
+            bits_ephem(bits_ephem <= 0) = -1;
+
+            bits_100(bits_100 > 0)  = 1;
+            bits_100(bits_100 <= 0) = -1;
+
+            check_par1 = navPartyChk(bits_ephem(1:32));
+            % size(bits)
+            % size(bits_100)
+
+            %--- Check the parity of the TLM and HOW words ----------------
+            % function status = navPartyChk(ndat)
+            n_dat1 = bits_ephem(1:32);
+
+            % This function is called to compute and status the parity
+            % bits on GPS word.
+            % Based on the flowchart in Figure 2-10 in the 2nd Edition of
+            % the GPS-SPS Signal Spec.
+            % status = navPartyChk(ndat)
+            % Inputs: 
+            % ndat - an array (1x32) of 32 bits represent a GPS navigation
+            % word which is 30 bits plus two previous bits used in
+            % the parity calculation (-2 -1 0 1 2 ... 28 29)
+            % Outputs: 
+            % status - the test value which equals EITHER +1 or -1 
+            % if parity PASSED or 0 if parity fails.  
+            % The +1 means bits #1-24 of the current word have the 
+            % correct polarity, while -1 means the bits #1-24 of the 
+            % current word must be inverted. 
+            %--- Check if the data bits must be inverted ------------------
+            if (n_dat1(2) ~= 1)
+                n_dat1(3:26)= -1 .* n_dat1(3:26);  % Also could just negate
+            end 
+            %--- Calculate 6 parity bits ----------------------------------------------
+            % The elements of the ndat array correspond to the bits showed in the table
+            % 20-XIV (ICD-200C document) in the following way:
+            % The first element in the ndat is the D29* bit and the second - D30*.
+            % The elements 3 - 26 are bits d1-d24 in the table.
+            % The elements 27 - 32 in the ndat array are the received bits D25-D30.
+            % The array "parity" contains the computed D25-D30 (parity) bits.
+            parity(1) = n_dat1(1)  * n_dat1(3)  * n_dat1(4)  * n_dat1(5)  * n_dat1(7)  * ...
+                n_dat1(8)  * n_dat1(12) * n_dat1(13) * n_dat1(14) * n_dat1(15) * ...
+                n_dat1(16) * n_dat1(19) * n_dat1(20) * n_dat1(22) * n_dat1(25);
+            parity(2) = n_dat1(2)  * n_dat1(4)  * n_dat1(5)  * n_dat1(6)  * n_dat1(8)  * ...
+                n_dat1(9)  * n_dat1(13) * n_dat1(14) * n_dat1(15) * n_dat1(16) * ...
+                n_dat1(17) * n_dat1(20) * n_dat1(21) * n_dat1(23) * n_dat1(26);
+            parity(3) = n_dat1(1)  * n_dat1(3)  * n_dat1(5)  * n_dat1(6)  * n_dat1(7)  * ...
+                n_dat1(9)  * n_dat1(10) * n_dat1(14) * n_dat1(15) * n_dat1(16) * ...
+                n_dat1(17) * n_dat1(18) * n_dat1(21) * n_dat1(22) * n_dat1(24);
+            parity(4) = n_dat1(2)  * n_dat1(4)  * n_dat1(6)  * n_dat1(7)  * n_dat1(8)  * ...
+                n_dat1(10) * n_dat1(11) * n_dat1(15) * n_dat1(16) * n_dat1(17) * ...
+                n_dat1(18) * n_dat1(19) * n_dat1(22) * n_dat1(23) * n_dat1(25);
+            parity(5) = n_dat1(2)  * n_dat1(3)  * n_dat1(5)  * n_dat1(7)  * n_dat1(8)  * ...
+                n_dat1(9)  * n_dat1(11) * n_dat1(12) * n_dat1(16) * n_dat1(17) * ...
+                n_dat1(18) * n_dat1(19) * n_dat1(20) * n_dat1(23) * n_dat1(24) * ...
+                n_dat1(26);
+            parity(6) = n_dat1(1)  * n_dat1(5)  * n_dat1(7)  * n_dat1(8)  * n_dat1(10) * ...
+                n_dat1(11) * n_dat1(12) * n_dat1(13) * n_dat1(15) * n_dat1(17) * ...
+                n_dat1(21) * n_dat1(24) * n_dat1(25) * n_dat1(26);
+            %--- Compare if the received parity is equal the calculated parity --------
+            if ((sum(parity == n_dat1(27:32))) == 6)
+                % Parity is OK. Function output is -1 or 1 depending if the data bits
+                % must be inverted or not. The "ndat(2)" is D30* bit - the last  bit of
+                % previous subframe. 
+                status1 = -1 * n_dat1(2);
+            else
+                % Parity failure
+                status1 = 0;
+            end
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            check_par2 = navPartyChk(bits_ephem(31:62));
+            %--- Check the parity of the TLM and HOW words ----------------
+            % function status = navPartyChk(ndat)
+            n_dat2 = bits_ephem(31:62);
+
+            % This function is called to compute and status the parity
+            % bits on GPS word.
+            % Based on the flowchart in Figure 2-10 in the 2nd Edition of
+            % the GPS-SPS Signal Spec.
+            % status = navPartyChk(ndat)
+            % Inputs: 
+            % ndat - an array (1x32) of 32 bits represent a GPS navigation
+            % word which is 30 bits plus two previous bits used in
+            % the parity calculation (-2 -1 0 1 2 ... 28 29)
+            % Outputs: 
+            % status - the test value which equals EITHER +1 or -1 
+            % if parity PASSED or 0 if parity fails.  
+            % The +1 means bits #1-24 of the current word have the 
+            % correct polarity, while -1 means the bits #1-24 of the 
+            % current word must be inverted. 
+            %--- Check if the data bits must be inverted ------------------
+            if (n_dat2(2) ~= 1)
+                n_dat2(3:26)= -1 .* n_dat2(3:26);  % Also could just negate
+            end 
+            %--- Calculate 6 parity bits ----------------------------------------------
+            % The elements of the ndat array correspond to the bits showed in the table
+            % 20-XIV (ICD-200C document) in the following way:
+            % The first element in the ndat is the D29* bit and the second - D30*.
+            % The elements 3 - 26 are bits d1-d24 in the table.
+            % The elements 27 - 32 in the ndat array are the received bits D25-D30.
+            % The array "parity" contains the computed D25-D30 (parity) bits.
+            parity(1) = n_dat2(1)  * n_dat2(3)  * n_dat2(4)  * n_dat2(5)  * n_dat2(7)  * ...
+                n_dat2(8)  * n_dat2(12) * n_dat2(13) * n_dat2(14) * n_dat2(15) * ...
+                n_dat2(16) * n_dat2(19) * n_dat2(20) * n_dat2(22) * n_dat2(25);
+            parity(2) = n_dat2(2)  * n_dat2(4)  * n_dat2(5)  * n_dat2(6)  * n_dat2(8)  * ...
+                n_dat2(9)  * n_dat2(13) * n_dat2(14) * n_dat2(15) * n_dat2(16) * ...
+                n_dat2(17) * n_dat2(20) * n_dat2(21) * n_dat2(23) * n_dat2(26);
+            parity(3) = n_dat2(1)  * n_dat2(3)  * n_dat2(5)  * n_dat2(6)  * n_dat2(7)  * ...
+                n_dat2(9)  * n_dat2(10) * n_dat2(14) * n_dat2(15) * n_dat2(16) * ...
+                n_dat2(17) * n_dat2(18) * n_dat2(21) * n_dat2(22) * n_dat2(24);
+            parity(4) = n_dat2(2)  * n_dat2(4)  * n_dat2(6)  * n_dat2(7)  * n_dat2(8)  * ...
+                n_dat2(10) * n_dat2(11) * n_dat2(15) * n_dat2(16) * n_dat2(17) * ...
+                n_dat2(18) * n_dat2(19) * n_dat2(22) * n_dat2(23) * n_dat2(25);
+            parity(5) = n_dat2(2)  * n_dat2(3)  * n_dat2(5)  * n_dat2(7)  * n_dat2(8)  * ...
+                n_dat2(9)  * n_dat2(11) * n_dat2(12) * n_dat2(16) * n_dat2(17) * ...
+                n_dat2(18) * n_dat2(19) * n_dat2(20) * n_dat2(23) * n_dat2(24) * ...
+                n_dat2(26);
+            parity(6) = n_dat2(1)  * n_dat2(5)  * n_dat2(7)  * n_dat2(8)  * n_dat2(10) * ...
+                n_dat2(11) * n_dat2(12) * n_dat2(13) * n_dat2(15) * n_dat2(17) * ...
+                n_dat2(21) * n_dat2(24) * n_dat2(25) * n_dat2(26);
+            %--- Compare if the received parity is equal the calculated parity --------
+            if ((sum(parity == n_dat2(27:32))) == 6)
+                % Parity is OK. Function output is -1 or 1 depending if the data bits
+                % must be inverted or not. The "ndat(2)" is D30* bit - the last  bit of
+                % previous subframe. 
+                status2 = -1 * n_dat2(2);
+            else
+                % Parity failure
+                status2 = 0;
+            end
+
+
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            % disp(isequaln(check_par1, status1))
+            % disp(isequaln(check_par2, status2))
+            
+
+            if (status1 ~= 0) && (status2 ~= 0)
+                % Parity was OK. Record the preamble start position. Skip
+                % the rest of preamble pattern checking for this channel
+                % and process next channel.
+
+                subFrameStart_mod = index(i);
+                break;
+            else
+            end % if parity is OK ...
+            
+
+        end % if (~isempty(find(index2 == 6000)))
+        
+    end % for i = 1:size(index)
+    
+    % Exclude channel from the active channel list if no valid preamble was
+    % detected
+    
+    if subFrameStart_mod == inf
+        disp('Could not find valid preambles in channel! ');
+        return
+    end
+    %% Decode ephemerides ===============================================
+    %=== Convert tracking output to navigation bits =======================
+    %--- Copy 5 sub-frames long record from tracking output ---------------
+    navBitsSamples = I_P_InputBits(subFrameStart_mod - 20/settings.DPE_cohInt: ...
+        subFrameStart_mod + (1500 * 20)/settings.DPE_cohInt -1)';
+    %--- Group every 20 values of bits into columns ------------------------
+    if settings.DPE_cohInt<20
+        navBitsSamples = reshape(navBitsSamples, ...
+            20/settings.DPE_cohInt, ...
+            (size(navBitsSamples, 1) / 20)* settings.DPE_cohInt);
+    else
+        % If PDI = 20 ms, the bits do not need to be grouped again
+        navBitsSamples=navBitsSamples';
+    end
+    %--- Sum all samples in the bits to get the best estimate -------------
+    navBits = sum(navBitsSamples,1); % Does nothing when PDI = 20 ms
+    
+    % return
+    %--- Now threshold and make 1 and 0 -----------------------------------
+    % The expression (navBits > 0) returns an array with elements set to 1
+    % if the condition is met and set to 0 if it is not met.
+    navBits = (navBits > 0);
+
+    %--- Convert from decimal to binary -----------------------------------
+    % The function ephemeris expects input in binary form. In Matlab it is
+    % a string array containing only "0" and "1" characters.
+    navBitsBin = dec2bin(navBits);
+
+    %=== Decode ephemerides and TOW of the first sub-frame ================
+    [eph_mod, TOW_mod] = ephemeris(navBitsBin(2:1501)', navBitsBin(1));
+
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+    
+    disp(isequaln(eph_test(PRN), eph_mod))
+    disp(isequaln(subFrameStart(channelNr), subFrameStart_mod))
+    disp(isequaln(TOW(channelNr), TOW_mod))
+    disp('aqui 56')
+    return
     catch
     end
 
@@ -110,8 +471,6 @@ for currMeasNr = 1:measNrSum
                navSolutions_az(activeChnList, currMeasNr), ...
                navSolutions_DOP(:, currMeasNr),satPositions] =...
                        leastSquarePos(satPositions, clkCorrRawP, settings);
-        % disp('ok11')
-        % return
         navSolutions_X(currMeasNr)  = xyzdt(1);
         navSolutions_Y(currMeasNr)  = xyzdt(2);
         navSolutions_Z(currMeasNr)  = xyzdt(3);       
@@ -167,8 +526,6 @@ for currMeasNr = 1:measNrSum
     %     transmitTime(activeChnList),localTime,...
     %     settings,satElev,fid,xyzdt(4),satClkCorr);
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    disp('ok45')
-    return
     % function [navSolutions]=DPE_module...
     % (currMeasNr,navSolutions,activeChnList,trackResults,currMeasSample,...
     % satPositions,transmitTime,localTime,settings,satElev,fid,...
@@ -869,7 +1226,6 @@ for currMeasNr = 1:measNrSum
         (navSolutions.LLH_error(currMeasNr,2)));
     fprintf('Current 2D Error of LS      : %1f\n',...
         (navSolutions.LLH_error(currMeasNr,1)));
-    return
     GT_ECEF =  llh2xyz(settings.gt_llh.*[pi/180 pi/180 1]);
     navSolutions.LLH_error(currMeasNr,3)= ...
         sqrt(sum(([navSolutions.X(currMeasNr)...
