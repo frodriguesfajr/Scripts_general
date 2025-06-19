@@ -52,6 +52,8 @@ if settings.MMT ~= 1
     if ~exist(trackFile, 'file')
         % Caso não exista, inicia novo processo de rastreamento
         
+        trackFile = strrep(trackFile, '.\GPSL1-DPEmodule', '');
+        % return
         % Registra hora de início
         startTime = now;
         disp(['   Tracking started at ', datestr(startTime)]);
