@@ -32,6 +32,9 @@ outfile_root = fileName(outfile_root(end)+1:end-4);
 outfile_root = ['.\GPSL1-DPEmodule\' outfile_root];
 if exist(outfile_root, 'dir') ~= 7
     mkdir(outfile_root);
+    disp(outfile_root)
+    disp(pwd)
+    return
 end
 
 % Armazena o caminho raiz nas configurações
@@ -47,12 +50,11 @@ if settings.MMT ~= 1
                 settings.outfile_root, '_', ...
                 num2str(settings.dllCorrelatorSpacing), '_', ...
                 num2str(settings.DPE_cohInt), '.mat'];
-    
+    trackFile = strrep(trackFile, '.\GPSL1-DPEmodule', '');
     % Verifica se o arquivo de resultados já existe
     if ~exist(trackFile, 'file')
         % Caso não exista, inicia novo processo de rastreamento
-        
-        trackFile = strrep(trackFile, '.\GPSL1-DPEmodule', '');
+        % trackFile = strrep(trackFile, '.\GPSL1-DPEmodule', '');
         % return
         % Registra hora de início
         startTime = now;
@@ -70,7 +72,6 @@ if settings.MMT ~= 1
         save(trackFile, 'trackResults', 'settings', 'acqResults', 'channel');
     else
         % Caso o arquivo já exista, carrega os resultados prévios
-        
         % Preserva as novas configurações
         new_settings = settings;
         disp(trackFile)
@@ -103,7 +104,6 @@ if settings.MMT ~= 1
     end
 else
     % Modo MMT (Modified Moving Tracking)
-    
     % Define nome do arquivo para modo MMT
     trackFile = [settings.outfile_root, '\trackResults_gps_MMT_', ...
                 settings.outfile_root, '_', ...
