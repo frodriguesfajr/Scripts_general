@@ -1,4 +1,4 @@
-function data = prepareGNSSProcessing(show_fig)
+function data = prepareGNSSProcessing(fileName, show_fig)
 % PREPAREGNSSPROCESSING Prepara dados GNSS brutos para processamento
 %
 %   data = prepareGNSSProcessing(show_fig)
@@ -18,9 +18,10 @@ function data = prepareGNSSProcessing(show_fig)
 
 % Inicializa configurações padrão do processamento
 settings = initSettings();
+data = NaN;
 
 % 1. Abertura do arquivo e verificação inicial
-fileName = settings.fileName;
+settings.fileName = fileName;
 fprintf('Preparando processamento para arquivo: %s\n', fileName);
 
 % Tenta abrir o arquivo no modo binário para leitura

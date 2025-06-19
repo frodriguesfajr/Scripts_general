@@ -1,5 +1,5 @@
 function [trackResults, channel, outfile_root] = ...
-    trackSatellites(acqResults, fid, settings, show_fig)
+    trackSatellites(fileName, acqResults, fid, settings, show_fig)
 % Função principal para rastreamento de satélites GNSS
 
 %       show_fig    - Flag para exibir gráficos diagnósticos 
@@ -25,17 +25,18 @@ if show_fig == 1
 end
 %% Cria diretório para armazenar os arquivos de saída
 % Extrai o nome base do arquivo de dados
-outfile_root = strfind(settings.fileName,'\');
-outfile_root = settings.fileName(outfile_root(end)+1:end-4); 
+outfile_root = strfind(fileName,'\');
+outfile_root = fileName(outfile_root(end)+1:end-4); 
 
 % Verifica se o diretório já existe, caso contrário cria
+outfile_root = ['.\GPSL1-DPEmodule\' outfile_root];
 if exist(outfile_root, 'dir') ~= 7
     mkdir(outfile_root);
 end
 
 % Armazena o caminho raiz nas configurações
-settings.outfile_root = outfile_root; 
 
+settings.outfile_root = outfile_root;   
 %% Processo de rastreamento principal
 % Verifica o modo de operação (normal ou MMT - Modified Moving Tracking)
 if settings.MMT ~= 1
@@ -70,7 +71,7 @@ if settings.MMT ~= 1
         
         % Preserva as novas configurações
         new_settings = settings;
-        
+        disp(trackFile)
         % Carrega resultados anteriores
         load(trackFile);
         

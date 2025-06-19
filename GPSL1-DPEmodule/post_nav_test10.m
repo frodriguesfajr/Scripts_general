@@ -3,20 +3,24 @@ clear;           % Remove todas as variáveis da memória
 clc;             % Limpa a janela de comandos
 % addpath ('.\include')  
 % addpath ('.\common') 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Initialize constants, settings =========================================
 settings = initSettings();
-[fid, message] = fopen(settings.fileName, 'rb');
-data_gps = prepareGNSSProcessing(0);
+fileName = 'C:\Repository\Scripts_general\GPSL1-DPEmodule\IF_Data_Set\Medium Urban in TST with one NLOS.dat';
+% fileName = 'C:\Repository\Scripts_general\GPSL1-DPEmodule\IF_Data_Set\Open Sky GPS L1.dat';
+[fid, message] = fopen(fileName, 'rb');
+data_gps = prepareGNSSProcessing(fileName, 0);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 [acqResults, data_aq] = acquireSatellites(settings, fid, 0);
-[trackResults, channel, outfil] = trackSatellites(acqResults, ...
-    fid, settings, 0);
+[trackResults, channel, outfil] = trackSatellites(fileName, acqResults, ...
+    fid, settings, 1);
 settings.outfile_root = outfil; 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Calculate navigation solutions =====================================
 disp('   Calculating navigation solutions...');
 [navSolutions, eph_ch, activeChnList] = ...
     verifyAndInitializeGNSS(settings, trackResults);
+
 % Inicialização de vetores auxiliares
 [subFrameStart, TOW] = deal(inf(1, settings.numberOfChannels));
 %% Loop sobre canais ativos

@@ -58,28 +58,9 @@ settings.skipNumberOfBytes     = 0;
 %% Raw signal file name and other parameter ===============================
 % This is a "default" name of the data file (signal record) to be used in
 % the post-processing mode
-% settings.fileName           = 'F:\B210 DATA\12Nov2022_B210_4.dat';
-% settings.fileName           = 'F:\B210 DATA\12Nov2022_B210_9.dat';
-% settings.fileName           = 'F:\B210 DATA\11Nov2022_B210_2.dat';
-% settings.fileName           = 'F:\B210 DATA\21Dec2022_B210_5.dat';
-% settings.fileName           = 'F:\B210 DATA\9Nov2022_B210_1.dat';
-% settings.fileName           = 'F:\B210 DATA\30Dec2022_B210_3.dat';
-% settings.fileName           = 'F:\B210 DATA\7Dec2022_B210_3.dat';
-% settings.fileName           = 'F:\B210 DATA\11Nov2022_B210_3.dat';
-% settings.fileName           = 'F:\B210 DATA\21Dec2022_B210_5.dat';
-% settings.fileName           = 'F:\B210 DATA\29Dec2022_B210_3.dat';
-% settings.fileName           = 'F:\B210 DATA\29Dec2022_B210_11.dat';
-% settings.fileName           = 'F:\NSL STEREO\D_20191230_TSTEb_GPS_1713.dat';
-settings.fileName           = 'C:\Repository\GPSL1-DPEmodule\IF_Data_Set\Medium Urban in TST with one NLOS.dat';
-% settings.fileName           = 'F:\NSL STEREO\D_20190414_YouMaTai_1920.dat';
-% settings.fileName           = 'F:\NSL STEREO\d_0850_3.dat';
-% settings.fileName           = 'E:\test3.dat';
-% settings.fileName           ='F:\Spirent simulation data\003\File_003.bin';%'C:\Users\gnss\Desktop\Discussion\Amungo Navigation for NUT4NT+\dump_ch1.bin';  
-% settings.fileName           = 'F:\N210 DATA\1Mar2024_N210_GPSL1_1.dat';
-% settings.fileName           = 'F:\LABSAT\HaiDi_File_039.bin';
 % Data type used to store one sample
 settings.dataType           = 'schar';  % "schar" = int8, "short" = int16
- 
+% settings.dataType           = 'short'; 
 % File Types
 %1 - 8 bit real samples S0,S1,S2,...
 %2 - 8 bit I/Q samples I0,Q0,I1,Q1,I2,Q2,...                      
@@ -88,6 +69,7 @@ settings.fileType           = 2;
 % Intermediate, sampling and code frequencies
 settings.IF                 = 0;     % [Hz]
 settings.samplingFreq       = 26e6;%26e6;%58e6;        % [Hz]
+% settings.samplingFreq       = 10e6;%26e6;%58e6;        % [Hz]
 settings.codeFreqBasis      = 1.023e6;     % [Hz]
 
 % Define number of chips in a code period
@@ -164,6 +146,12 @@ settings.CNo.VSMinterval = 40;
 
 %% Ground Truth ===========================================================
 % For evaluation of SDR performance
+
+settings.gt_llh = [22.299866 114.180036 16]; % 
+% settings.gt_llh = [22.30459780 114.18011900 61.095];
+
+
+
 % Added by Sergio Vicenzo - 13 Feb 2024
 % settings.gt_llh = [31.26529162 121.62553832  0]; % File_002
 % settings.gt_llh = [31.264469 121.625567 0]; % File_003
@@ -172,7 +160,6 @@ settings.CNo.VSMinterval = 40;
 % settings.gt_llh =[22.29949700 114.17810610 2.813]; %11 NOV 2022
 % settings.gt_llh = [22.3122139, 114.17280277777777, 65]; %D_20190414_YouMaTai_1920
 % settings.gt_llh = [22.299866 114.180036 3]; % D_20191230_TSTEb_GPS_1713
-settings.gt_llh = [22.299866 114.180036 16]; % 
 % settings.gt_llh = [22.30477703, 114.18030159, 11.591]; %30 DEC 2022
 % settings.gt_llh = [22.30290170 114.17775590 11.611]; %21 DEC 2022	(FILE 1 - 5)
 % settings.gt_llh =[22.30729456 114.17950917 28.894]; %09 NOV 2022 (FILE 6 - 10)
