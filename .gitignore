@@ -27,3 +27,16 @@
 /ground_truth.csv
 /Pixel4_derived.csv
 /convbin.exe
+/GPSL1-DPEmodule/post_nav_test7.asv
+/GPSL1-DPEmodule/post_nav_test8.asv
+/GPSL1-DPEmodule/post_nav_test10.asv
+/GPSL1-DPEmodule/Common/acquireSatellites.m.bak
+/GPSL1-DPEmodule/Common/crosscorr_mod.m.bak
+/GPSL1-DPEmodule/Common/decodeEphemerisForChannel.m.bak
+/GPSL1-DPEmodule/Common/forceFFTSymmetry.m.bak
+/GPSL1-DPEmodule/Common/prepareGNSSProcessing.m.bak
+/GPSL1-DPEmodule/Common/trackSatellites.m.bak
+/GPSL1-DPEmodule/Common/verifyAndInitializeGNSS.m.bak
+/GPSL1-DPEmodule/Common/xcorr_mod2.m.bak
+/GPSL1-DPEmodule/include/satpos.m.bak
+/SoftGNSS-python/utils/nav_parity_chk.py.bak
