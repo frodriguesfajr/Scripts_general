@@ -51,6 +51,9 @@ if settings.MMT ~= 1
                 num2str(settings.dllCorrelatorSpacing), '_', ...
                 num2str(settings.DPE_cohInt), '.mat'];
     trackFile = strrep(trackFile, '.\GPSL1-DPEmodule', '');
+    trackFile = strrep(trackFile, 'trackResults_gps_\', 'trackResults_gps_');
+    basePath = 'C:\Repository\Scripts_general\GPSL1-DPEmodule';
+    trackFile = fullfile(basePath, trackFile(2:end));  % Remove a barra inicial '\' ao juntar
     % Verifica se o arquivo de resultados já existe
     if ~exist(trackFile, 'file')
         % Caso não exista, inicia novo processo de rastreamento
@@ -68,9 +71,9 @@ if settings.MMT ~= 1
              datestr(now - startTime, 13), ')']);
         % load('trackResults_dpe_sim.mat');  % Carrega a struct 'trackResults'
         % disp('ok45')
-        trackFile = strrep(trackFile, 'trackResults_gps_\', 'trackResults_gps_');
-        basePath = 'C:\Repository\Scripts_general\GPSL1-DPEmodule';
-        trackFile = fullfile(basePath, trackFile(2:end));  % Remove a barra inicial '\' ao juntar
+        % trackFile = strrep(trackFile, 'trackResults_gps_\', 'trackResults_gps_');
+        % basePath = 'C:\Repository\Scripts_general\GPSL1-DPEmodule';
+        % trackFile = fullfile(basePath, trackFile(2:end));  % Remove a barra inicial '\' ao juntar
         % Salva os resultados no arquivo
         disp(['   Saving Acq & Tracking results to file "trackingResults.mat"']);
         save(trackFile, 'trackResults', 'settings', 'acqResults', 'channel');
