@@ -32,9 +32,9 @@ outfile_root = fileName(outfile_root(end)+1:end-4);
 outfile_root = ['.\GPSL1-DPEmodule\' outfile_root];
 if exist(outfile_root, 'dir') ~= 7
     mkdir(outfile_root);
-    disp(outfile_root)
-    disp(pwd)
-    return
+    % disp(outfile_root)
+    % disp(pwd)
+    % return
 end
 
 % Armazena o caminho raiz nas configurações
@@ -66,7 +66,11 @@ if settings.MMT ~= 1
         % Exibe tempo decorrido
         disp(['   Tracking is over (elapsed time ', ...
              datestr(now - startTime, 13), ')']);
-        
+        % load('trackResults_dpe_sim.mat');  % Carrega a struct 'trackResults'
+        % disp('ok45')
+        trackFile = strrep(trackFile, 'trackResults_gps_\', 'trackResults_gps_');
+        basePath = 'C:\Repository\Scripts_general\GPSL1-DPEmodule';
+        trackFile = fullfile(basePath, trackFile(2:end));  % Remove a barra inicial '\' ao juntar
         % Salva os resultados no arquivo
         disp(['   Saving Acq & Tracking results to file "trackingResults.mat"']);
         save(trackFile, 'trackResults', 'settings', 'acqResults', 'channel');
