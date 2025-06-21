@@ -48,11 +48,14 @@ chip_spacings = [-(flip(settings.chipspacing_dpe_precalc:...
 % Pré-aloca matriz para armazenar correlações pré-calculadas
 precalc_correlations = zeros(length(chip_spacings)*length(activeChnList),3);
 
-% Cria diretório para armazenar correlogramas se necessário
-if ~exist([settings.outfile_root '\Correlogram\'], 'dir') && ...
-        settings.DPE_plotCorrelogram == 1
-    mkdir([settings.outfile_root '\Correlogram\']);
-end
+% % Cria diretório para armazenar correlogramas se necessário
+% if ~exist([settings.outfile_root '\Correlogram\'], 'dir') && ...
+%         settings.DPE_plotCorrelogram == 1
+%     disp('ok44')
+%     mkdir([settings.outfile_root '\Correlogram\']);
+% end
+% disp(settings.outfile_root)
+% disp(settings.outfile_root '\Correlogram\')
 
 % === Geração do espaço de busca para latitude e longitude ================
 % Cria grade de busca centrada na estimativa de mínimos quadrados
@@ -296,16 +299,167 @@ end
 % === Determina a solução DPE final ===
 [~,barisan_yangmanaya] = max(temprecord_DPE_values(:,4));
 
-% === Gera gráficos de correlogramas se configurado ===
-if settings.DPE_plotCorrelogram == 1
-    % [Código para geração de gráficos omitido por brevidade]
-    % Gera gráficos 3D dos correlogramas para cada satélite e combinado
-    % Salva imagens em formato PNG e figuras MATLAB
-end
-
 % === Armazena resultados na estrutura de saída ===
 navSolutions.DPE_estimate(currMeasNr, 1:5) = temprecord_DPE_values(barisan_yangmanaya,1:5);
 navSolutions.DPE_latitude(currMeasNr) = temprecord_DPE_values(barisan_yangmanaya,1);
 navSolutions.DPE_longitude(currMeasNr) = temprecord_DPE_values(barisan_yangmanaya,2);
 navSolutions.DPE_height(currMeasNr) = temprecord_DPE_values(barisan_yangmanaya,3);
 navSolutions.DPE_clkBias(currMeasNr) = temprecord_DPE_values(barisan_yangmanaya,5);
+
+% === Gera gráficos de correlogramas se configurado ===
+if settings.DPE_plotCorrelogram == 1
+    alt = temprecord_DPE_values(barisan_yangmanaya,3);
+
+    candia_map=[mesh_ll,ones(size(mesh_ll,1),1)*alt];
+
+    x = candia_map(:,1)./180 .* pi;
+    y = candia_map(:,2)./180 .* pi;
+    candia_xyz  = llh2xyz([x,y,candia_map(:,3)]); 
+    % Use llh2xyz by Todd Walter, 2001
+
+    correlogram=zeros(length(clk_s_area),length(candia_map));
+
+    for j=1:length(activeChnList)
+
+        candia_xyz_pseudoranges =  ...
+            sqrt(sum(((repmat(satPositions(:,j)',length(candia_xyz),1)...
+            - candia_xyz).^2),2));
+
+        candia_xyz_pseudoranges = candia_xyz_pseudoranges...
+            + trop(j) - satClkCorr(j)* settings.c;
+
+        candia_xyz_pseudoranges_clkBias = zeros(length(clk_s_area),...
+            length(candia_xyz_pseudoranges));          
+        for blob = 1:length(clk_s_area)
+            candia_xyz_pseudoranges_clkBias(blob,1:...
+                length(candia_xyz_pseudoranges)) = ...
+                candia_xyz_pseudoranges(1:end)+clk_s_area(blob);
+        end
+    
+        dissstt=(localTime-transmitTime(j))*settings.c;
+    
+        codePhase3=...
+            dissstt-(repmat(dissstt,...
+            size(candia_xyz_pseudoranges_clkBias,1),...
+            size(candia_xyz_pseudoranges_clkBias,2))-...
+            candia_xyz_pseudoranges_clkBias)...
+            ;
+    
+        prn_index = find(precalc_correlations(:,1)==...
+            trackResults(activeChnList(j)).PRN);
+    
+        correlogram_single = ...
+            interp1(precalc_correlations(prn_index,2),...
+              precalc_correlations(prn_index,3),codePhase3,'linear');
+    
+        try
+          nanx = isnan(correlogram_single);
+          t    = 1:numel(correlogram_single);
+          correlogram_single(nanx) = interp1(t(~nanx),...
+          correlogram_single(~nanx), t(nanx),'linear');
+        catch
+        end
+
+    % === Plot correlogram for single satellite ===========================
+        figure;
+        W = reshape(correlogram_single((temprecord_DPE_values(barisan_yangmanaya,7)),:),...
+            sqrt(length(candia_map)),sqrt(length(candia_map)));
+        reshape_cand_llh_1 = reshape(candia_map(:,1),...
+            [sqrt(length(candia_map)),sqrt(length(candia_map))]);
+        reshape_cand_llh_2 = reshape(candia_map(:,2),...
+            [sqrt(length(candia_map)),sqrt(length(candia_map))]);
+        surf(reshape_cand_llh_1,reshape_cand_llh_2,W); % plot the result
+        hold on;
+        gtt = scatter3(settings.gt_llh(1),settings.gt_llh(2),...
+            max(max(W)),50,'filled');
+        gtt.MarkerFaceColor = "#000000";
+        ylabel( 'Longitude', 'Interpreter', 'none');
+        xlabel( 'Latitude', 'Interpreter', 'none');
+        zlabel('Correlation');
+        set(gca,'FontSize',10);
+        set(gca, 'FontName', 'Arial');
+        grid on;
+        grid minor;
+        view(0,90);
+        xlim([min(candia_map(:,1)),max(candia_map(:,1))]);
+        ylim([min(candia_map(:,2)),max(candia_map(:,2))]);
+        colorbar;
+        legend('','Ground Truth');
+        ax = gca;
+        ax.XAxis.LineWidth = 3;
+        ax.YAxis.LineWidth = 3;
+        ax.ZAxis.LineWidth = 3;
+        ax.GridAlpha = 1;
+        ax.MinorGridAlpha = 1;
+        title(['PRN ', num2str(trackResults(activeChnList(j)).PRN)],...
+            ['Epoch ', num2str(currMeasNr)]);
+        hold off;
+        % % Save figure in PNG
+         % saveas(gcf, [pwd ,'\Correlogram\',num2str(currMeasNr),...
+         %     '_PRN',num2str(trackResults(activeChnList(j)).PRN),...
+         %     '.png']);
+        %  % Save figure in MATLAB figure
+        %  saveas(gcf, [pwd ,'\',settings.outfile_root,'\Correlogram\',...
+        %      settings.outfile_root,'_Correlogram_Epoch',num2str(currMeasNr),...
+        %      '_PRN',num2str(trackResults(activeChnList(j)).PRN)]);
+
+    % === Sum up the correlograms from each satellite =====================
+    correlogram=correlogram+correlogram_single;
+
+    end % for j=1:length(activeChnList)
+
+
+% === Plot correlogram from all satellites ================================
+    figure;
+    W = reshape(correlogram(round(temprecord_DPE_values(barisan_yangmanaya,7)),:),...
+        sqrt(length(candia_map)),sqrt(length(candia_map)));
+    reshape_cand_llh_1 = reshape(candia_map(:,1),...
+        [sqrt(length(candia_map)),sqrt(length(candia_map))]);
+    reshape_cand_llh_2 = reshape(candia_map(:,2),...
+        [sqrt(length(candia_map)),sqrt(length(candia_map))]);
+    surf(reshape_cand_llh_1,reshape_cand_llh_2,W); % plot the result
+    hold on;
+    gtt = scatter3(settings.gt_llh(1),settings.gt_llh(2),...
+        max(max(W)),50,'filled');
+    gtt.MarkerFaceColor = "#000000";
+    dpelatlong = scatter3(temprecord_DPE_values(barisan_yangmanaya,1),...
+        temprecord_DPE_values(barisan_yangmanaya,2),...
+        max(max(W)),50,'filled');
+    dpelatlong.MarkerFaceColor = "#A2142F";
+    stllatlong = scatter3(navSolutions.latitude(currMeasNr),...
+        navSolutions.longitude(currMeasNr),...
+        max(max(W)),50,'filled');
+    stllatlong.MarkerFaceColor = "#00FF00";
+    ylabel( 'Longitude', 'Interpreter', 'none');
+    xlabel( 'Latitude', 'Interpreter', 'none');
+    zlabel('Correlation');
+    set(gca,'FontSize',10);
+    set(gca, 'FontName', 'Arial');
+    grid on;
+    grid minor;
+    view(0,90);
+    xlim([min(candia_map(:,1)),max(candia_map(:,1))]);
+    ylim([min(candia_map(:,2)),max(candia_map(:,2))]);
+    colorbar;
+    legend('','Ground Truth','DPE position','Least Squares (STL)');
+    ax = gca;
+    ax.XAxis.LineWidth = 3;
+    ax.YAxis.LineWidth = 3;
+    ax.ZAxis.LineWidth = 3;
+    ax.GridAlpha = 1;
+    ax.MinorGridAlpha = 1;
+    title(['Epoch ', num2str(currMeasNr)], ['DPE 2D Positioning Error = ', ...
+        num2str(temprecord_DPE_values(barisan_yangmanaya,6)),' meters']);
+    hold off;
+    % % Save figure in PNG
+    saveas(gcf, [pwd ,'\Correlogram\','Correlogram_Epoch',num2str(currMeasNr),...
+     '.png']);
+    % saveas(gcf, [pwd ,'\Correlogram\',num2str(currMeasNr),...
+    %          '_PRN',num2str(trackResults(activeChnList(j)).PRN),...
+    %          '.png']);
+    % % Save figure in MATLAB figure
+    % saveas(gcf, [pwd ,'\',settings.outfile_root,'\Correlogram\',...
+    %  settings.outfile_root,'_Correlogram_Epoch',num2str(currMeasNr)]);
+
+    close all
+end

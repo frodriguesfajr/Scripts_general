@@ -17,26 +17,6 @@ function settings = initSettings()
 % 
 % Copyright (C) Darius Plausinaitis
 % Written by Darius Plausinaitis
-%--------------------------------------------------------------------------
-%This program is free software; you can redistribute it and/or
-%modify it under the terms of the GNU General Public License
-%as published by the Free Software Foundation; either version 2
-%of the License, or (at your option) any later version.
-%
-%This program is distributed in the hope that it will be useful,
-%but WITHOUT ANY WARRANTY; without even the implied warranty of
-%MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-%GNU General Public License for more details.
-%
-%You should have received a copy of the GNU General Public License
-%along with this program; if not, write to the Free Software
-%Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301,
-%USA.
-%--------------------------------------------------------------------------
-
-% CVS record:
-% $Id: initSettings.m,v 1.9.2.31 2006/08/18 11:41:57 dpl Exp $
-
 %% Processing settings ====================================================
 % Number of milliseconds to be processed used 36000 + any transients (see
 % below - in Nav parameters) to ensure nav subframes are provided
@@ -45,7 +25,8 @@ function settings = initSettings()
 % i.e., deduct the actual full length by 2000 or 3000 ms
 % This is necessary for locating bit transition in tracking.m
 settings.msToProcess        = 110000;        %[ms]
-
+% settings.msToProcess        = 297000;        %[ms]
+% settings.msToProcess        = 290000;        %[ms]
 % Number of channels to be used for signal processing
 settings.numberOfChannels   = 12;
 
@@ -103,7 +84,6 @@ settings.dllCorrelatorSpacing    = 0.3;     %[chips] % prev. 0.5
 % Carrier tracking loop parameters
 settings.pllDampingRatio         = 0.707; 
 % settings.pllNoiseBandwidth       = 20;      %[Hz] 
-% Disabled by Sergio Vicenzo - 06 Jan 2025
 % settings.pllNoiseBandwidth is fixed at 20 for PDI = 1 ms 
 % and 5 for PDI >= 5 ms
 
@@ -152,28 +132,6 @@ settings.gt_llh = [22.299866 114.180036 16]; %
 
 
 
-% Added by Sergio Vicenzo - 13 Feb 2024
-% settings.gt_llh = [31.26529162 121.62553832  0]; % File_002
-% settings.gt_llh = [31.264469 121.625567 0]; % File_003
-% settings.gt_llh = [22.30465290 114.18096270 10.667]; %12Nov2022_B210_4
-% settings.gt_llh =[22.30396900 114.18027170 10.652]; %09 NOV 2022 (FILE 1 - 5)
-% settings.gt_llh =[22.29949700 114.17810610 2.813]; %11 NOV 2022
-% settings.gt_llh = [22.3122139, 114.17280277777777, 65]; %D_20190414_YouMaTai_1920
-% settings.gt_llh = [22.299866 114.180036 3]; % D_20191230_TSTEb_GPS_1713
-% settings.gt_llh = [22.30477703, 114.18030159, 11.591]; %30 DEC 2022
-% settings.gt_llh = [22.30290170 114.17775590 11.611]; %21 DEC 2022	(FILE 1 - 5)
-% settings.gt_llh =[22.30729456 114.17950917 28.894]; %09 NOV 2022 (FILE 6 - 10)
-% settings.gt_llh = [22.30459780 114.18011900 61.095]; %- R core rooftop
-% settings.gt_llh = [22.3028020248354, 114.193081317790, 7.487]; %Whampoa
-% settings.gt_llh = [22.30401360 114.17890410 9.866]; %- 12Nov2022_B210_9
-% settings.gt_llh =  [22.30290170 114.17775590 9.769]; % 21 DEC 2022	(FILE 1 - 5)
-% settings.gt_llh = [22.30386634 114.18001750 11.611]; %29 DEC 2022 (FILE 1 - 3)
-% settings.gt_llh = [22.30536039 114.18041400 11.611]; %29 DEC 2022 (FILE 4 - 10)
-% settings.gt_llh = [22.30554810 114.18013600 20.664] ; %29 DEC 2022 (FILE 11 - 15)
-% settings.gt_llh = [22.30401360 114.17890410 9.866]; %7Dec2022_B210_3
-% settings.gt_llh = [22.29949700 114.17810610 2.813] ; %11Nov2022_B210_2
-% settings.gt_llh = [22.292958333333335 114.1742888888889 2]; %HaiDi files
-
 %% DPE config =============================================================
 % Chip spacing for DPE "pre-calculate correlations" implementation
 
@@ -217,14 +175,12 @@ settings.DPE_cohInt = 20; % in ms % For both STL and DPE.
 
 % Span of lat-long search space i.e., plus-minus
 % "settings.DPE_latlong_span" meters
-% Added by Sergio Vicenzo - 16 Feb 2024
 settings.DPE_latlong_span = 30;
 
 % Span of height search space i.e., plus-minus "settings.DPE_height_span"
 % meters
 % Large search space for height estimation due to GNSS' inherent 
 % nature of high uncertainty in height estimation
-% Added by Sergio Vicenzo - 16 Feb 2024
 settings.DPE_height_span = 50;
 
 % Span of clock bias search space i.e., plus-minus 
@@ -239,7 +195,6 @@ settings.DPE_clkBias_span = 20;
 settings.candPVT_spacing = 1; % in meters
 
 % Enable/disable plotting correlogram of DPE at every epoch
-% Added by Sergio Vicenzo - 5 Mar 2024
 settings.DPE_plotCorrelogram = 0;   % 0 - Off
                                     % 1 - On
 
