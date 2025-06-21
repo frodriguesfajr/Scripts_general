@@ -1,8 +1,6 @@
 %% Limpeza do ambiente
 clear;           % Remove todas as variáveis da memória
 clc;             % Limpa a janela de comandos
-% addpath ('.\include')  
-% addpath ('.\common') 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Initialize constants, settings =========================================
 settings = initSettings();
@@ -178,6 +176,12 @@ for currMeasNr = 1:measNrSum
         warning(['   Epoch ', num2str(currMeasNr), ...
                  ': Not enough satellites for position fix.']);
     end
+
+    navSolutions.az = az_arr;
+    navSolutions.el = el_arr;
+    navSolutions.PRN = trackResults.PRN;
+
+
     navSolutions.latitude(currMeasNr) = lat;
     navSolutions.longitude(currMeasNr) = long;
     navSolutions.height(currMeasNr) = height;
@@ -209,42 +213,103 @@ for currMeasNr = 1:measNrSum
         norm(([navSolutions.latitude(currMeasNr),...
         navSolutions.longitude(currMeasNr)]...
         -settings.gt_llh(1:2))./[m2lat m2lon]);
+    GT_ECEF =  llh2xyz(settings.gt_llh.*[pi/180 pi/180 1]);
+    navSolutions.LLH_error(currMeasNr,3)= ...
+        sqrt(sum(([navSolutions.X(currMeasNr)...
+        navSolutions.Y(currMeasNr)...
+        navSolutions.Z(currMeasNr)]-GT_ECEF).^2));
+
+    pos_xyz = ...
+        llh2xyz([navSolutions.DPE_latitude(currMeasNr)/180*pi,...
+        navSolutions.DPE_longitude(currMeasNr)/180*pi,...
+        navSolutions.DPE_height(currMeasNr)]);
+
+    navSolutions.LLH_error(currMeasNr,4)=  ...
+        sqrt(sum(([pos_xyz]-GT_ECEF).^2));
 
     %% Impressão do erro de posição, se existir
     fprintf('\nCurrent 2D Error of DPE: %1f\n',...
          (navSolutions.LLH_error(currMeasNr,2)));
     fprintf('Current 2D Error of LS: %.6f m\n', LS_error(currMeasNr, 1));
+
+    % === Prints the 3D errors of both Least Squares and DPE ==============
+
+    fprintf('\nCurrent 3D Error of DPE     : %1f\n',...
+        (navSolutions.LLH_error(currMeasNr,4)));
+    fprintf('Current 3D Error of LS      : %1f\n',...
+        (navSolutions.LLH_error(currMeasNr,3)));
     
     % return
 end
 
 % return
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% ls_2d_list_new = navSolutions.LLH_error(:,1)';
-ls_2d_list_new = LS_error(:,1)';
-dpe_2d_list_new = navSolutions.LLH_error(:,2)';
+% % ls_2d_list_new = navSolutions.LLH_error(:,1)';
+% ls_2d_list_new = LS_error(:,1)';
+% dpe_2d_list_new = navSolutions.LLH_error(:,2)';
+% navSolPeriod = 500;
+% 
+% % === Plot 2D positioning error ===========================================
+% 
+% figure;
+% 
+% % Plotagem das duas curvas com mesmo estilo
+% plot(ls_2d_list_new, 'Color', [80, 29, 138]/255, 'LineWidth', 3);
+% hold on;
+% plot(dpe_2d_list_new, 'Color', [230, 57, 70]/255, 'LineWidth', 3);  % Usei outra cor para diferenciar
+% 
+% % Legenda para as duas curvas
+% legend('Least Squares (Scalar Tracking)', 'DPE Method', 'FontSize', 12);
+% 
+% % Eixos e título
+% xlabel(sprintf('Epoch (%d ms)', navSolPeriod), 'FontSize', 12);
+% ylabel('2D error (m)', 'FontSize', 12);
+% xlim([1, max(length(ls_2d_list_new), length(dpe_2d_list_new))]);
+% title('2D Positioning Error');
+% 
+% % Grade e formatação
+% grid on;
+% set(gca, 'FontSize', 12);
+% 
+% % disp('   Processing is complete for this data block');
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+save(['C:\Repository\Scripts_general\GPSL1-DPEmodule\navSolutions_execution.mat'], 'navSolutions');
+% 'C:\Repository\Scripts_general\GPSL1-DPEmodule\navSolutions_execution.mat'
+ls_2d_list = navSolutions.LLH_error(:,1)';
+dpe_2d_list = navSolutions.LLH_error(:,2)';
+ls_3d_list = navSolutions.LLH_error(:,3)';
+dpe_3d_list = navSolutions.LLH_error(:,4)';
 navSolPeriod = 500;
-
-% === Plot 2D positioning error ===========================================
-
-figure;
-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+figure(1);
 % Plotagem das duas curvas com mesmo estilo
-plot(ls_2d_list_new, 'Color', [80, 29, 138]/255, 'LineWidth', 3);
+plot(ls_2d_list, 'Color', [80, 29, 138]/255, 'LineWidth', 3);
 hold on;
-plot(dpe_2d_list_new, 'Color', [230, 57, 70]/255, 'LineWidth', 3);  % Usei outra cor para diferenciar
-
+plot(dpe_2d_list, 'Color', [230, 57, 70]/255, 'LineWidth', 3);
 % Legenda para as duas curvas
 legend('Least Squares (Scalar Tracking)', 'DPE Method', 'FontSize', 12);
-
 % Eixos e título
 xlabel(sprintf('Epoch (%d ms)', navSolPeriod), 'FontSize', 12);
 ylabel('2D error (m)', 'FontSize', 12);
-xlim([1, max(length(ls_2d_list_new), length(dpe_2d_list_new))]);
+xlim([1, max(length(ls_2d_list), length(dpe_2d_list))]);
 title('2D Positioning Error');
-
 % Grade e formatação
 grid on;
 set(gca, 'FontSize', 12);
-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+figure(2);
+% Plotagem das duas curvas com mesmo estilo
+plot(ls_3d_list, 'Color', [80, 29, 138]/255, 'LineWidth', 3);
+hold on;
+plot(dpe_3d_list, 'Color', [230, 57, 70]/255, 'LineWidth', 3);
+% Legenda para as duas curvas
+legend('Least Squares (Scalar Tracking)', 'DPE Method', 'FontSize', 12);
+% Eixos e título
+xlabel(sprintf('Epoch (%d ms)', navSolPeriod), 'FontSize', 12);
+ylabel('3D error (m)', 'FontSize', 12);
+xlim([1, max(length(ls_3d_list), length(dpe_3d_list))]);
+title('3D Positioning Error');
+% Grade e formatação
+grid on;
+set(gca, 'FontSize', 12);
 % disp('   Processing is complete for this data block');
