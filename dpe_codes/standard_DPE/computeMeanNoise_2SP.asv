@@ -1,0 +1,522 @@
+% ===========================================
+
+close all;
+clear all;
+format long;
+
+rng(42)
+
+%% -------------------------------------------------
+%% CONFIG como TEXTO (sem function, sem arquivo extra)
+%% -------------------------------------------------
+cfgLines = [
+"c   = 299792458;"                                  ...
+"f0  = 1575.42e6;"                                  ...
+""                                                  ...
+"% ---- Signal Parameters (GPS E1)"                 ...
+"CodePeriod               = 1e-3;"                  ...
+"CoherentIntegrations     = 1;"                     ...
+"NonCoherentIntegrations  = 1;"                     ...
+"m                        = 1;"                      ...
+"n                        = 1;"                      ...
+"type                     = 'BPSK';"                ...
+"Tc                       = 1/(n*1.023e6);"         ...
+"Ts                       = 1/(2*m*1.023e6);"       ...
+"fs                       = 50e6;"                  ...
+"dt                       = 1/fs;"                  ...
+"fn                       = 2e6;"                   ...
+"order                    = 36;"                    ...
+""                                                  ...
+"% ---- Scenario Parameters"                        ...
+"load('SatPositions.mat');"                         ...
+"numSV        = 7;"                                 ...
+"SatPosition  = corrSatPosition(1:7, :);"           ...
+"SatPRN       = [12 15 17 19 24 25 32];"            ...
+"UserPosition = [3.915394273911475e+06 2.939638207807819e+05 5.009529661006817e+06];" ...
+""                                                  ...
+"% ---- Simulation parameters"                      ...
+"% CNosim = 30:1:50; % original"                    ...
+"CNosim = 30:5:50;"                                 ...
+"% Nexpe  = 200;     % original"                    ...
+"Nexpe  = 2;"                                       ...
+"simulate_mle       = 1;"                           ...
+"compute_zzb        = 1;"                           ...
+"RIMuse             = 0;"                           ...
+"estimateTrueNoise  = 1;"                           ...
+"plot_estimated_cn0 = 1;"                           ...
+""                                                  ...
+"% ---- 2-steps parameters"                         ...
+"num2stepsIterations = 10;"                         ...
+""                                                  ...
+"% ---- DPE parameters (ARS)"                       ...
+"Niter          = 10000;"                           ...
+"gamma_est      = zeros(3, Niter+1);"               ...
+"amp_est        = zeros(numSV, Niter+1);"           ...
+"EstRxClkBias   = zeros(1, Niter+1);"               ...
+"% EstRxClkBias = dt*1.3;"                          ...
+"contraction    = 2;"                               ...
+"dmax           = 10000;"                           ...
+"dmin           = 0.01;"                            ...
+"dmax_clk       = dt/10;"                           ...
+"dmin_clk       = dt/100;"                          ...
+""                                                  ...
+"NormalizaFactor = sqrt(NonCoherentIntegrations)*CoherentIntegrations*CodePeriod*fs;" ...
+"CN0_est_ind     = 1;"                              ...
+];
+
+config = strjoin(cfgLines, newline);  % <-- TEXTO com a config
+
+% Executa a config também no workspace do SCRIPT (opcional, mas útil aqui)
+c   = 299792458;
+f0  = 1575.42e6;
+% "% ---- Signal Parameters (GPS E1)"
+CodePeriod               = 1e-3;
+CoherentIntegrations     = 1;
+NonCoherentIntegrations  = 1;
+m                        = 1;
+n                        = 1;
+type                     = 'BPSK';
+Tc                       = 1/(n*1.023e6);
+Ts                       = 1/(2*m*1.023e6);
+fs                       = 50e6;
+dt                       = 1/fs;
+fn                       = 2e6;
+order                    = 36;
+% ---- Scenario Parameters"                        ...
+load('SatPositions.mat');
+numSV        = 7;
+SatPosition  = corrSatPosition(1:7, :);
+SatPRN       = [12 15 17 19 24 25 32];
+UserPosition = [3.915394273911475e+06 2.939638207807819e+05 5.009529661006817e+06];
+                                                  
+% ---- Simulation parameters"    
+% "% CNosim = 30:1:50; % original"
+CNosim = 30:5:50;
+% "% Nexpe  = 200;     % original"
+Nexpe  = 2;
+simulate_mle       = 1;
+compute_zzb        = 1;
+RIMuse             = 0;
+estimateTrueNoise  = 1;
+plot_estimated_cn0 = 1;
+% ---- 2-steps parameters"
+num2stepsIterations = 10;
+% ---- DPE parameters (ARS)
+Niter          = 10000;
+gamma_est      = zeros(3, Niter+1);
+amp_est        = zeros(numSV, Niter+1);
+EstRxClkBias   = zeros(1, Niter+1);
+EstRxClkBias = dt*1.3;
+contraction    = 2;
+dmax           = 10000;
+dmin           = 0.01;
+dmax_clk       = dt/10;
+dmin_clk       = dt/100;
+% NormalizaFactor = sqrt(NonCoherentIntegrations)*CoherentIntegrations*CodePeriod*fs;
+% CN0_est_ind     = 1;
+
+
+eval(config);
+
+%% -------------------------------------------------
+%% Alocação de memória
+%% -------------------------------------------------
+PosErrLS   = zeros(length(CNosim), Nexpe);
+CN0_est    = zeros(length(CNosim), Nexpe);
+cn0        = zeros(length(CNosim), numSV, Nexpe);
+
+%% -------------------------------------------------
+%% Geração de sinal (sigen struct)
+%% -------------------------------------------------
+% Agora, dentro de signalGen (e das demais), o eval(config) vai
+% executar exatamente o TEXTO acima no workspace delas.
+% sigen     = signalGen(config);
+
+
+%% load configuration file
+eval(config)
+%% number of samples calculation
+NsamplesLocal=CodePeriod*fs*CoherentIntegrations;   % Number of samples of the Local Replica
+NsamplesData=CodePeriod*fs*CoherentIntegrations*NonCoherentIntegrations;    %Number of samples of the Received Signal (Data).
+
+
+%% memory allocation
+Range=zeros(1,numSV);
+x_local=zeros(numSV,NsamplesLocal);
+fft_local=zeros(numSV,NsamplesLocal);
+x_delay=zeros(numSV,NsamplesData);
+
+
+%% Compute range and fractional delays for each SV
+
+for kSV=1:numSV 
+    Range(kSV)                               =   norm(SatPosition(kSV,:) - UserPosition);    
+end
+
+FracDelay=mod(Range/c,CodePeriod);
+
+
+%% Generate local replica and delayed signals according to the computed delays
+   
+PrevNCOIndex    =  -  FracDelay/Tc;
+randomDelay= 0;
+for kSV=1:numSV
+    Code                                    =   genCAcode(SatPRN(kSV));
+    Tchip                                   =   CodePeriod / length(Code);
+    ii                                      =   1 : NsamplesLocal;          % generating LGenBlocks samples
+    x_local(kSV,:)                                 =   Code((1 + mod(round((ii - 1) / fs / Tchip), length(Code))));
+%     fft_local(kSV,:) = fft(x_local(kSV,:),Nsamples);
+    ii                                      =   1 : NsamplesData;
+    x_delay(kSV,:)                                 =   Code((1 + mod(round(PrevNCOIndex(kSV)+randomDelay+(ii - 1) / fs / Tchip), length(Code))));
+end
+
+%% Filter local signal and generate its FFT 
+
+wn=pi*fn/(pi*fs/2);
+h=fir1(order,wn);
+for kSV=1:numSV
+    x_delay(kSV,:)  = filtfilt(h,1,x_delay(kSV,:));
+    x_local(kSV,:)  = filtfilt(h,1,x_local(kSV,:));
+    fft_local(kSV,:) = fft(x_local(kSV,:),NsamplesLocal);
+end
+
+%% Normalize Received Signal Power after filtering
+
+for kSV=1:numSV
+    x_delay(kSV,:)  = x_delay(kSV,:)*sqrt((NsamplesData/sum(x_delay(kSV,:).^2)));
+end
+
+
+%% gather outputs in a struct
+sigen.x_delay = x_delay;
+sigen.x_local = x_local;
+sigen.fft_local = fft_local;
+sigen.randomDelay = randomDelay;
+sigen.NsamplesLocal = NsamplesLocal;
+sigen.NsamplesData = NsamplesData;
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% return
+
+
+
+meanNoise = computeMeanNoise(config, sigen);
+
+if simulate_mle
+    %% Start Simulation
+    for CNo_idx = 1:length(CNosim)
+        CNosim(CNo_idx) %#ok<NOPRT>
+        for exp_idx = 1:Nexpe
+            CNo = CNosim(CNo_idx) * ones(numSV,1);
+
+            %% Signal + noise
+            x = receivedSignal(sigen, config, CNo);
+
+            %% Apply RIM
+            if RIMuse
+                x = RIM(x);
+            end
+
+            %% Perform coherent/non-coherent integration times
+            r = correlateSignal(sigen, config, x);
+
+            %% Estimate CN0
+            cn0(CNo_idx,:,exp_idx) = estimateCn0(r, config, meanNoise);
+
+            %% 2-steps: Conventional approach estimation
+            PosErrLS(CNo_idx,exp_idx) = conv2stepsPVT(r, config);
+
+            %% DPE approach ARS (accelerated random search)
+            % [PosErrDPE(CNo_idx,exp_idx), CN0_est(CNo_idx,exp_idx)] = DPEarsPVT(r, config);
+        end
+    end
+
+    % Compute RMSEs
+    RMSE_LS    = sqrt(mean(PosErrLS.^2, 2));
+    % RMSE_DPE   = sqrt(mean(PosErrDPE.^2, 2));
+    averageCn0 = mean(mean(cn0, 2), 3); %#ok<NASGU>
+end
+
+%% PLOTS
+%% -------------------------------------------------
+
+figure,
+
+h = semilogy(CNosim, RMSE_LS, 'b-.');
+                     % CNosim, RMSE_DPE, 'b', ...
+                     % CNosim, fZZLB_2SP, 'r-.', ...
+                     % CNosim, fZZLB_DPE, 'r');
+        % legend('MLE 2SP','MLE DPE','ZZB 2SP','ZZB DPE', 'fontsize', 16)
+legend('2SP', 'fontsize', 16)
+grid
+set(h, 'Linewidth', 2)
+xlabel('CN0 [dB-Hz]')
+ylabel('RMSE [m]')
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function CAcode = genCAcode(PRN)
+% generateCAcode.m generates one of the 32 GPS satellite C/A codes.
+%
+% CAcode = generateCAcode(PRN)
+%
+%   Inputs:
+%       PRN         - PRN number of the sequence.
+%
+%   Outputs:
+%       CAcode      - a vector containing the desired C/A code sequence 
+%                   (chips).  
+
+%--------------------------------------------------------------------------
+%                           SoftGNSS v3.0
+% 
+% Copyright (C) Darius Plausinaitis
+% Written by Darius Plausinaitis
+% Based on Dennis M. Akos, Peter Rinder and Nicolaj Bertelsen
+%--------------------------------------------------------------------------
+%This program is free software; you can redistribute it and/or
+%modify it under the terms of the GNU General Public License
+%as published by the Free Software Foundation; either version 2
+%of the License, or (at your option) any later version.
+%
+%This program is distributed in the hope that it will be useful,
+%but WITHOUT ANY WARRANTY; without even the implied warranty of
+%MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+%GNU General Public License for more details.
+%
+%You should have received a copy of the GNU General Public License
+%along with this program; if not, write to the Free Software
+%Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301,
+%USA.
+%--------------------------------------------------------------------------
+
+%CVS record:
+%$Id: generateCAcode.m,v 1.1.2.1 2007/01/29 10:22:24 dpl Exp $
+
+%--- Make the code shift array. The shift depends on the PRN number -------
+% The g2s vector holds the appropriate shift of the g2 code to generate
+% the C/A code (ex. for SV#19 - use a G2 shift of g2s(19) = 471)
+g2s = [  5,   6,   7,   8,  17,  18, 139, 140, 141, 251, ...
+       252, 254, 255, 256, 257, 258, 469, 470, 471, 472, ...
+       473, 474, 509, 512, 513, 514, 515, 516, 859, 860, ...
+       861, 862 ... end of shifts for GPS satellites 
+       ... Shifts for the ground GPS transmitter are not included
+       ... Shifts for EGNOS and WAAS satellites (true_PRN = PRN + 87)
+                 145, 175,  52,  21, 237, 235, 886, 657, ...
+       634, 762, 355, 1012, 176, 603, 130, 359, 595, 68, ...
+       386];
+
+%--- Pick right shift for the given PRN number ----------------------------
+g2shift = g2s(PRN);
+
+%--- Generate G1 code -----------------------------------------------------
+
+%--- Initialize g1 output to speed up the function ---
+g1 = zeros(1, 1023);
+%--- Load shift register ---
+reg = -1*ones(1, 10);
+
+%--- Generate all G1 signal chips based on the G1 feedback polynomial -----
+for i=1:1023
+    g1(i)       = reg(10);
+    saveBit     = reg(3)*reg(10);
+    reg(2:10)   = reg(1:9);
+    reg(1)      = saveBit;
+end
+
+%--- Generate G2 code -----------------------------------------------------
+
+%--- Initialize g2 output to speed up the function ---
+g2 = zeros(1, 1023);
+%--- Load shift register ---
+reg = -1*ones(1, 10);
+
+%--- Generate all G2 signal chips based on the G2 feedback polynomial -----
+for i=1:1023
+    g2(i)       = reg(10);
+    saveBit     = reg(2)*reg(3)*reg(6)*reg(8)*reg(9)*reg(10);
+    reg(2:10)   = reg(1:9);
+    reg(1)      = saveBit;
+end
+
+%--- Shift G2 code --------------------------------------------------------
+%The idea: g2 = concatenate[ g2_right_part, g2_left_part ];
+g2 = [g2(1023-g2shift+1 : 1023), g2(1 : 1023-g2shift)];
+
+%--- Form single sample C/A code by multiplying G1 and G2 -----------------
+CAcode = -(g1 .* g2);
+end
+
+
+function r = correlateSignal(sigen,config,x_delay_noise)
+
+
+%% load configuration file
+eval(config)
+
+fft_local = sigen.fft_local;
+NsamplesLocal = sigen.NsamplesLocal;
+
+
+%% memory allocation
+r=zeros(numSV,NsamplesLocal);
+    %% Perform NonCoherentIntegrations times non coherent integrations of CoherentIntegrations times coherent integrations.
+for kSV=1:numSV
+    for idx_nc=1:NonCoherentIntegrations
+        r(kSV,:)=r(kSV,:)+abs(ifft(fft(x_delay_noise(1,NsamplesLocal*(idx_nc-1)+1:NsamplesLocal*idx_nc),NsamplesLocal) .* conj(fft_local(kSV,:)))).^2;
+    end
+end
+end
+
+function meanNoise = computeMeanNoise(config,sigen)
+
+%% load configuration file
+eval(config)
+
+NsamplesData = sigen.NsamplesData;
+if estimateTrueNoise == 0
+    meanNoise = nan;
+else
+    %% Add AWGN noise to the transmitted signals
+    mean_noise=zeros(1,Nexpe);
+    for exp_idx=1:Nexpe
+        noise = ( sqrt(1/2)*randn(1,NsamplesData) +1i* sqrt(1/2)*randn(1,NsamplesData) );
+        r = correlateSignal(sigen,config,noise);
+        mean_noise(exp_idx) = mean(mean(r,2));
+    end
+    meanNoise=mean(mean_noise);
+end
+end
+
+function x = receivedSignal(sigen,config,CNo)
+
+
+%% load configuration file
+eval(config)
+
+x_delay = sigen.x_delay;
+NsamplesData = sigen.NsamplesData;
+
+
+%% memory allocation
+x_delay_noise=zeros(numSV,NsamplesData);
+
+
+
+%% Add AWGN noise to the transmitted signals
+noise = ( sqrt(1/2)*randn(1,NsamplesData) +1i* sqrt(1/2)*randn(1,NsamplesData) );
+for kSV=1:numSV
+    if CNo(kSV)<100
+        % Sets amplitude assuming complex-noise power equal to 1
+        %For CNo >=100 no noise is added.
+        
+        A       = sqrt(10^(CNo(kSV)/10)/fs);
+        x_delay_noise(kSV,:) = A * x_delay(kSV,:);
+    else
+        x_delay_noise(kSV,:)=x_delay(kSV,:);
+    end
+end
+%% Add noice to received signal and filter
+x = sum(x_delay_noise, 1)+noise;
+
+wn=pi*fn/(pi*fs/2);
+h=fir1(order,wn);
+x  = filtfilt(h,1,x);
+end
+
+function cn0 = estimateCn0(r,config,meanNoise)
+
+%% load configuration file
+eval(config)
+
+%% find maximum value and its argument
+[energy, maxPos] = max(r,[],2);
+
+
+%% Estimate mean noise
+if estimateTrueNoise == 0
+    [~, r_samples] = size(r);  % Number of samples per signal
+    chipSamples = ceil(Tc*fs); % Number of samples per chip
+
+
+    low_range=maxPos-chipSamples;
+    high_range=maxPos+chipSamples;
+    % Remove autocorrelation from each signal (± 1 chip)
+    r_clean=zeros(numSV,r_samples-chipSamples*2-1);
+    for idx=1:numSV
+        if low_range(idx)>1 && high_range(idx)<r_samples
+            range = [1:low_range(idx)-1 high_range(idx)+1:r_samples];
+        elseif low_range(idx)<=1
+            range = high_range(idx)+1:(mod(low_range(idx)-2,r_samples)+1);
+        else
+            range = mod(high_range(idx),r_samples)+1:low_range(idx)-1;
+        end
+        r_clean(idx,:) = r(idx,range);
+    end
+    % Estimate mean noise
+    meanNoise = mean(r_clean,2);
+end
+
+%% Estime snr and cn0
+snr =(energy+meanNoise) ./ meanNoise;
+cn0 = 10*log10(snr/(CodePeriod*CoherentIntegrations));
+
+end
+
+function PosErrLS = conv2stepsPVT(r,config)
+
+%% load configuration file
+eval(config)
+
+%% memory allocation
+EstRange=zeros(1,numSV);
+
+
+RefPos=UserPosition+10*(2*rand(3,1)-1)';
+EstRxPVT=[RefPos];
+
+
+%Estimate time delays
+[~, maxPos] = max(r,[],2);
+maxPos=maxPos-1;
+
+
+
+EstFracDelay=maxPos/fs;
+EstFracRange=EstFracDelay * c;
+
+% Loop over iterations.
+for kIterations                                     =   1 : num2stepsIterations
+    
+    
+    % Loop over satellites.
+    for kSV                                         =   1 : numSV
+        EstRange(kSV)                               =   norm(SatPosition(kSV,:) - EstRxPVT(1:3));
+        
+        numH                                        =   SatPosition(kSV, :) - EstRxPVT(1:3);
+        denH                                        =   norm(numH);
+        H(kSV, 1:3)                      =   - numH / denH;
+        %          H(kSV,4)=1;
+        
+    end
+    
+    corrP                                                   =   (EstFracRange - EstRange') / c;
+    corrP_noAmbg                                            =   wrap(rem(corrP, 1e-3), 0.5e-3);
+    
+    corrFracPseudorange                                     =   corrP_noAmbg * c;
+    
+    deltaPVT                                                =   ((H' * H) \ H') * corrFracPseudorange;
+    EstRxPVT                                         =   EstRxPVT + deltaPVT.';
+end
+
+PosErrLS=norm(EstRxPVT(1:3)-UserPosition);
+end
+
+function answer = q(x) 
+answer = erfc(x/sqrt(2))/2;
+end
+
+function x = wrap( x, x_max )
+
+while( sum( abs(x) > x_max ) ~= 0)
+    x(abs(x)>x_max)  =   x(abs(x)>x_max) - sign(x(abs(x)>x_max))*2*x_max;
+end
+
+end
