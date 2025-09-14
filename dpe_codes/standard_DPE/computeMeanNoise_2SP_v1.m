@@ -4,7 +4,7 @@ close all;
 clear;
 format long;
 
-% rng(42)
+rng(42)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 c   = 299792458;
 f0  = 1575.42e6;
@@ -42,8 +42,8 @@ SatPRN       = [12 15 17 19 24 25 32];
 UserPosition = [3.915394273911475e+06 2.939638207807819e+05 ...
     5.009529661006817e+06];                                                
 %% ---- Simulation parameters"    
-CNosim = 30:1:50;
-Nexpe  = 10;
+CNosim = 30:5:50;
+Nexpe  = 2;
 RIMuse             = 0;
 estimateTrueNoise  = 1;
 % ---- 2-steps parameters"
@@ -154,8 +154,7 @@ RMSE_LS    = sqrt(mean(PosErrLS.^2, 2));
 averageCn0 = mean(mean(cn0, 2), 3);
 
 
-%% Ziv-Zakai bound computation
-% computeZZB
+%% Cramer Rao Bound computation
 x_local = sigen.x_local;
 
 B_2=sum((diff(x_local(1,:))/dt).^2)/sum(x_local(1,:).^2);
@@ -169,31 +168,42 @@ RT=[T^2/12 0 0; 0 T^2/12 0; 0 0 T^2/12 ];
 varT=T^2/12;
 
 SNRdb=CNosim+10*log10(T);
-fZZLB_2SP = zeros(1,length(CNosim));
 
-for SNRloop=1:length(SNRdb)
-    SNR=10^(SNRdb(SNRloop)/10);
-    Jtau=diag(repmat(SNR*B_2*2,1,M));
-    J= P'*Jtau*P;
+%% === CRB (2-steps) ===============================================
+SNRdb  = CNosim + 10*log10(T);
+fCRB_2SP  = zeros(1,length(CNosim));
+
+for k = 1:length(SNRdb)
+    SNR = 10^(SNRdb(k)/10);
+    % --- FIM dos atrasos (cada canal independente) ---
+    % CRB(tau_i) = 1/(2*SNR*B_2)  =>  J_tau(ii) = 2*SNR*B_2
+    Jtau = diag( 2*SNR*B_2 * ones(M,1) );
+    % --- CRB de posição (propagação via FIM geométrica) ---
+    % J_p = P' * Jtau * P    ,   CRB_p = inv(J_p)
+    Jp      = P' * Jtau * P;
+    CRB_2SP = inv(Jp);                          % [m^2]
+    fCRB_2SP(k) = sqrt( trace(CRB_2SP) );  % sqrt(sigma_x^2+sigma_y^2+sigma_z^2)    
     
-    ZZLB_tau=eye(M)* (1/8*varT*2*q(sqrt(SNR))+(1/(SNR*B_2*2))*gammainc(SNR/2,3/2));
-    ZZLB_2SP=(P'*P)^-1*P'*(ZZLB_tau)*((P'*P)^-1*P')';
-    
-    fZZLB_2SP(SNRloop)=sqrt(ZZLB_2SP(1,1)+ZZLB_2SP(2,2)+ZZLB_2SP(3,3));
 end
 
+%% === Tabela CN0 vs RMSE_LS e CRB_2SP ==============================
+T = table(CNosim(:), RMSE_LS(:), fCRB_2SP(:), ...
+          'VariableNames', {'CN0_dBHz','RMSE_LS_m','CRB_2SP_m'});
+
+% Para exibir no Command Window já formatado:
+disp(T)
+
+% return
+%% === PLOT conjunto (LS simulado x ZZB x CRB) ===========================
+figure;
+h = semilogy( CNosim, RMSE_LS,   'b-.', ...
+               CNosim, fCRB_2SP,  'k-'  );
+legend('2SP','CRB 2SP','fontsize',16);
+grid on; set(h,'LineWidth',2);
+xlabel('C/N_0 [dB-Hz]'); ylabel('RMSE [m]');
 
 
-%% PLOTS
-%% -------------------------------------------------
-figure,
-h = semilogy(CNosim, RMSE_LS, 'b-.', ...
-             CNosim, fZZLB_2SP, 'r-.');
-legend('2SP', 'ZZB 2SP', 'fontsize', 16)
-grid
-set(h, 'Linewidth', 2)
-xlabel('CN0 [dB-Hz]')
-ylabel('RMSE [m]')
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function CAcode = genCAcode(PRN)
 % generateCAcode.m generates one of the 32 GPS satellite C/A codes.
