@@ -4,7 +4,7 @@ close all;
 clear;
 format long;
 
-% rng(42)
+rng(42)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 c   = 299792458;
 f0  = 1575.42e6;
@@ -194,40 +194,40 @@ varT=T^2/12;
 
 SNRdb=CNosim+10*log10(T);
 fZZLB_DPE = zeros(1,length(CNosim));
+fZZB_DPE  = zeros(1,length(CNosim));
 
-%% === CRB (2-steps) ===============================================
+%% === CRB DPE ===============================================
 SNRdb  = CNosim + 10*log10(T);
-fCRB_2SP  = zeros(1,length(CNosim));
+fCRB_DPE  = zeros(1,length(CNosim));
+
 
 for k = 1:length(SNRdb)
     SNR = 10^(SNRdb(k)/10);
-    % --- FIM dos atrasos (cada canal independente) ---
-    % CRB(tau_i) = 1/(2*SNR*B_2)  =>  J_tau(ii) = 2*SNR*B_2
+
+     % --- FIM dos atrasos (cada SV): J_tau(ii) = 2 * SNR * B_2
     Jtau = diag( 2*SNR*B_2 * ones(M,1) );
-    Jtau_dpe=diag(repmat(SNR*B_2*2,1,M));
-    J= P'*Jtau_dpe*P;
-    % --- CRB de posição (propagação via FIM geométrica) ---
-    % J_p = P' * Jtau * P    ,   CRB_p = inv(J_p)
-    Jp      = P' * Jtau * P;
-    ZZLB_DPE= 1/16*Rd*2*q(sqrt(M*SNR))+inv(J)*gammainc(M*SNR/2,3/2);    
-    fZZLB_DPE(k)=sqrt(ZZLB_DPE(1,1)+ZZLB_DPE(2,2)+ZZLB_DPE(3,3));
-    
+
+    % --- Projeção para posição: J_p = P' * J_tau * P
+    Jp  = P' * Jtau * P;            % [1/m^2]
+    CRB = inv(Jp);                  % [m^2]
+
+    % Métrica escalar (RMSE 3D)
+    fCRB_DPE(k) = sqrt( trace(CRB) );              % [m]
 end
 
-%% === Tabela CN0 vs RMSE_LS e CRB_2SP ==============================
-T = table(CNosim(:), RMSE_DPE(:), fZZLB_DPE(:), ...
-          'VariableNames', {'CN0_dBHz','RMSE_DPE_m','CRB_DPE_m'});
+%% ===== Tabela CN0 vs RMSE_DPE, CRB_DPE e ZZB_DPE ========================
+T_CRB_ZZB = table(CNosim(:), RMSE_DPE(:), fCRB_DPE(:), ...
+                  'VariableNames', {'CN0_dBHz','RMSE_DPE_m','CRB_DPE_m'});
+disp(T_CRB_ZZB)
 
-% Para exibir no Command Window já formatado:
-disp(T)
-
-% return
+%% ===== Plot comparando DPE x CRB-DPE x ZZB-DPE ==========================
 figure;
-h = semilogy( CNosim, RMSE_DPE,   'b-.', ...
-               CNosim, fZZLB_DPE,  'k-'  );
-legend('DPE','ZZ DPE','fontsize',16);
+h = semilogy(CNosim, RMSE_DPE, 'b-.', ...
+             CNosim, fCRB_DPE, 'k-');
+legend('DPE (RMSE)','CRB-DPE','fontsize',16);
 grid on; set(h,'LineWidth',2);
-xlabel('C/N_0 [dB-Hz]'); ylabel('RMSE [m]');
+xlabel('C/N_0 [dB-Hz]'); ylabel('Erro [m]');
+
 
 
 
