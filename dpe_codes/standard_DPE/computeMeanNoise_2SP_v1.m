@@ -4,7 +4,7 @@ close all;
 clear;
 format long;
 
-rng(42)
+% rng(42)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 c   = 299792458;
 f0  = 1575.42e6;
@@ -42,8 +42,8 @@ SatPRN       = [12 15 17 19 24 25 32];
 UserPosition = [3.915394273911475e+06 2.939638207807819e+05 ...
     5.009529661006817e+06];                                                
 %% ---- Simulation parameters"    
-CNosim = 30:5:50;
-Nexpe  = 2;
+CNosim = 30:1:50;
+Nexpe  = 500;
 RIMuse             = 0;
 estimateTrueNoise  = 1;
 % ---- 2-steps parameters"

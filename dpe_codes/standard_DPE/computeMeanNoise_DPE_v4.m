@@ -36,6 +36,22 @@ dmax_clk       = dt/10;
 dmin_clk       = dt/100;
 NormalizaFactor = sqrt(NonCoherentIntegrations)*CoherentIntegrations*CodePeriod*fs;
 CN0_est_ind     = 1;
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% ---- DPE Parameters
+dpe_param.gamma_guess = UserPosition;
+dpe_param.Niter = 10000;
+dpe_param.dmax = 10000;
+dpe_param.dt = 0.01;
+dpe_param.dmax_clk = dt/10;
+dpe_param.dmin_clk = dt/100;
+dpe_param.contraction = 2;
+dpe_param.dmin = 0.01;
+dpe_param.fn = fn;
+dpe_param.CN0_est_ind = CN0_est_ind;
+gamma_est      = zeros(3, dpe_param.Niter+1);
+amp_est        = zeros(numSV,  dpe_param.Niter+1);
+EstRxClkBias   = zeros(1,  dpe_param.Niter+1);
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% ---- Scenario Parameters
 corrSatPosition = 1.0e+07 * [
@@ -169,14 +185,12 @@ for CNo_idx = 1:length(CNosim)
         %% Perform coherent/non-coherent integration times
         r = correlateSignal(sigen,x);
         %% Estimate CN0
-        cn0(CNo_idx,:,exp_idx) = estimateCn0(sigen, r, meanNoise);
         %% DPE approach ARS (accelerated random search)
-        [PosErrDPE(CNo_idx,exp_idx), CN0_est(CNo_idx,exp_idx)] = DPEarsPVT(r,sigen);
+        PosErrDPE(CNo_idx,exp_idx) = DPEarsPVT(r,sigen, dpe_param);
     end
 end
 % Compute RMSEs
 RMSE_DPE   = sqrt(mean(PosErrDPE.^2, 2));
-averageCn0 = mean(mean(cn0, 2), 3);
 
 
 %% Cramer Rao Bound computation
@@ -194,40 +208,40 @@ varT=T^2/12;
 
 SNRdb=CNosim+10*log10(T);
 fZZLB_DPE = zeros(1,length(CNosim));
+fZZB_DPE  = zeros(1,length(CNosim));
 
-%% === CRB (2-steps) ===============================================
+%% === CRB DPE ===============================================
 SNRdb  = CNosim + 10*log10(T);
-fCRB_2SP  = zeros(1,length(CNosim));
+fCRB_DPE  = zeros(1,length(CNosim));
+
 
 for k = 1:length(SNRdb)
     SNR = 10^(SNRdb(k)/10);
-    % --- FIM dos atrasos (cada canal independente) ---
-    % CRB(tau_i) = 1/(2*SNR*B_2)  =>  J_tau(ii) = 2*SNR*B_2
+
+     % --- FIM dos atrasos (cada SV): J_tau(ii) = 2 * SNR * B_2
     Jtau = diag( 2*SNR*B_2 * ones(M,1) );
-    Jtau_dpe=diag(repmat(SNR*B_2*2,1,M));
-    J= P'*Jtau_dpe*P;
-    % --- CRB de posição (propagação via FIM geométrica) ---
-    % J_p = P' * Jtau * P    ,   CRB_p = inv(J_p)
-    Jp      = P' * Jtau * P;
-    ZZLB_DPE= 1/16*Rd*2*q(sqrt(M*SNR))+inv(J)*gammainc(M*SNR/2,3/2);    
-    fZZLB_DPE(k)=sqrt(ZZLB_DPE(1,1)+ZZLB_DPE(2,2)+ZZLB_DPE(3,3));
-    
+
+    % --- Projeção para posição: J_p = P' * J_tau * P
+    Jp  = P' * Jtau * P;            % [1/m^2]
+    CRB = inv(Jp);                  % [m^2]
+
+    % Métrica escalar (RMSE 3D)
+    fCRB_DPE(k) = sqrt( trace(CRB) );              % [m]
 end
 
-%% === Tabela CN0 vs RMSE_LS e CRB_2SP ==============================
-T = table(CNosim(:), RMSE_DPE(:), fZZLB_DPE(:), ...
-          'VariableNames', {'CN0_dBHz','RMSE_DPE_m','CRB_DPE_m'});
+%% ===== Tabela CN0 vs RMSE_DPE, CRB_DPE e ZZB_DPE ========================
+T_CRB_ZZB = table(CNosim(:), RMSE_DPE(:), fCRB_DPE(:), ...
+                  'VariableNames', {'CN0_dBHz','RMSE_DPE_m','CRB_DPE_m'});
+disp(T_CRB_ZZB)
 
-% Para exibir no Command Window já formatado:
-disp(T)
-
-% return
+%% ===== Plot comparando DPE x CRB-DPE x ZZB-DPE ==========================
 figure;
-h = semilogy( CNosim, RMSE_DPE,   'b-.', ...
-               CNosim, fZZLB_DPE,  'k-'  );
-legend('DPE','ZZ DPE','fontsize',16);
+h = semilogy(CNosim, RMSE_DPE, 'b-.', ...
+             CNosim, fCRB_DPE, 'k-');
+legend('DPE (RMSE)','CRB-DPE','fontsize',16);
 grid on; set(h,'LineWidth',2);
-xlabel('C/N_0 [dB-Hz]'); ylabel('RMSE [m]');
+xlabel('C/N_0 [dB-Hz]'); ylabel('Erro [m]');
+
 
 
 
@@ -376,47 +390,6 @@ h=fir1(order,wn);
 x  = filtfilt(h,1,x);
 end
 
-function cn0 = estimateCn0(sigen, r, meanNoise)
-
-estimateTrueNoise = sigen.estimateTrueNoise;
-CodePeriod = sigen.CodePeriod;
-CoherentIntegrations = sigen.CoherentIntegrations;
-
-%% find maximum value and its argument
-[energy, maxPos] = max(r,[],2);
-
-
-%% Estimate mean noise
-if estimateTrueNoise == 0
-    [~, r_samples] = size(r);  % Number of samples per signal
-    chipSamples = ceil(Tc*fs); % Number of samples per chip
-
-
-    low_range=maxPos-chipSamples;
-    high_range=maxPos+chipSamples;
-    % Remove autocorrelation from each signal (± 1 chip)
-    r_clean=zeros(numSV,r_samples-chipSamples*2-1);
-    for idx=1:numSV
-        if low_range(idx)>1 && high_range(idx)<r_samples
-            range = [1:low_range(idx)-1 high_range(idx)+1:r_samples];
-        elseif low_range(idx)<=1
-            range = high_range(idx)+1:(mod(low_range(idx)-2,r_samples)+1);
-        else
-            range = mod(high_range(idx),r_samples)+1:low_range(idx)-1;
-        end
-        r_clean(idx,:) = r(idx,range);
-    end
-    % Estimate mean noise
-    meanNoise = mean(r_clean,2);
-end
-
-%% Estime snr and cn0
-snr =(energy+meanNoise) ./ meanNoise;
-cn0 = 10*log10(snr/(CodePeriod*CoherentIntegrations));
-
-end
-
-
 function answer = q(x) 
 answer = erfc(x/sqrt(2))/2;
 end
@@ -429,12 +402,10 @@ end
 
 end
 
-function [PosErrDPE, CN0_est] = DPEarsPVT(r, sigen)
+function PosErrDPE = DPEarsPVT(r, sigen, dpe_param)
 
-%% load configuration file
-% eval(config)
 numSV = sigen.numSV;
-UserPosition = sigen.UserPosition;
+% UserPosition = sigen.UserPosition;
 Tc = sigen.Tc;
 SatPosition = sigen.SatPosition;
 c = sigen.c;
@@ -456,6 +427,17 @@ randomDelay = 0; %%% magic number....
 EstRange=zeros(1,numSV);
 MaxCorr=zeros(1,numSV);
 
+UserPosition = dpe_param.gamma_guess;
+Niter = dpe_param.Niter;
+dmax = dpe_param.dmax;
+% dt = dpe_param.dt;
+dmax_clk = dpe_param.dmax_clk;
+dmin_clk = dpe_param.dmin_clk;
+contraction = dpe_param.contraction;
+% dmin = dpe_param.dmin;
+% fn = dpe_param.fn;
+% CN0_est_ind = dpe_param.CN0_est_ind;
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 gamma_est(:,1) = UserPosition+100*(2*rand(3,1)-1)';
 EstRxClkBias(:,1)=-randomDelay*Tc;
 
