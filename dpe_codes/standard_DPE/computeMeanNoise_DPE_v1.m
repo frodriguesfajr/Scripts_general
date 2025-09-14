@@ -1,93 +1,137 @@
 % ===========================================
 
 close all;
-clear all;
+clear;
 format long;
 
-rng(42)
+% rng(42)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+c   = 299792458;
+f0  = 1575.42e6;
+%% ---- Signal Parameters (GPS E1)
+numSV        = 7;
+SatPRN       = [12 15 17 19 24 25 32];
+UserPosition = [3.915394273911475e+06 2.939638207807819e+05 ...
+    5.009529661006817e+06];  
+CodePeriod               = 1e-3;
+CoherentIntegrations     = 1;
+NonCoherentIntegrations  = 1;
+m                        = 1;
+n                        = 1;
+type                     = 'BPSK';
+Tc                       = 1/(n*1.023e6);
+Ts                       = 1/(2*m*1.023e6);
+fs                       = 50e6;
+dt                       = 1/fs;
+fn                       = 2e6;
+order                    = 36;
+Niter          = 10000;
+gamma_est      = zeros(3, Niter+1);
+amp_est        = zeros(numSV, Niter+1);
+EstRxClkBias   = zeros(1, Niter+1);
+contraction    = 2;
+dmax           = 10000;
+dmin           = 0.01;
+dmax_clk       = dt/10;
+dmin_clk       = dt/100;
+NormalizaFactor = sqrt(NonCoherentIntegrations)*CoherentIntegrations*CodePeriod*fs;
+CN0_est_ind     = 1;
 
-%% -------------------------------------------------
-%% CONFIG como TEXTO (sem function, sem arquivo extra)
-%% -------------------------------------------------
-cfgLines = [
-"c   = 299792458;"                                  ...
-"f0  = 1575.42e6;"                                  ...
-""                                                  ...
-"% ---- Signal Parameters (GPS E1)"                 ...
-"CodePeriod               = 1e-3;"                  ...
-"CoherentIntegrations     = 1;"                     ...
-"NonCoherentIntegrations  = 1;"                     ...
-"m                        = 1;"                      ...
-"n                        = 1;"                      ...
-"type                     = 'BPSK';"                ...
-"Tc                       = 1/(n*1.023e6);"         ...
-"Ts                       = 1/(2*m*1.023e6);"       ...
-"fs                       = 50e6;"                  ...
-"dt                       = 1/fs;"                  ...
-"fn                       = 2e6;"                   ...
-"order                    = 36;"                    ...
-""                                                  ...
-"% ---- Scenario Parameters"                        ...
-"load('SatPositions.mat');"                         ...
-"numSV        = 7;"                                 ...
-"SatPosition  = corrSatPosition(1:7, :);"           ...
-"SatPRN       = [12 15 17 19 24 25 32];"            ...
-"UserPosition = [3.915394273911475e+06 2.939638207807819e+05 5.009529661006817e+06];" ...
-""                                                  ...
-"% ---- Simulation parameters"                      ...
-"% CNosim = 30:1:50; % original"                    ...
-"CNosim = 30:5:50;"                                 ...
-"% Nexpe  = 200;     % original"                    ...
-"Nexpe  = 2;"                                       ...
-"simulate_mle       = 1;"                           ...
-"compute_zzb        = 1;"                           ...
-"RIMuse             = 0;"                           ...
-"estimateTrueNoise  = 1;"                           ...
-"plot_estimated_cn0 = 1;"                           ...
-""                                                  ...
-"% ---- 2-steps parameters"                         ...
-"num2stepsIterations = 10;"                         ...
-""                                                  ...
-"% ---- DPE parameters (ARS)"                       ...
-"Niter          = 10000;"                           ...
-"gamma_est      = zeros(3, Niter+1);"               ...
-"amp_est        = zeros(numSV, Niter+1);"           ...
-"EstRxClkBias   = zeros(1, Niter+1);"               ...
-"% EstRxClkBias = dt*1.3;"                          ...
-"contraction    = 2;"                               ...
-"dmax           = 10000;"                           ...
-"dmin           = 0.01;"                            ...
-"dmax_clk       = dt/10;"                           ...
-"dmin_clk       = dt/100;"                          ...
-""                                                  ...
-"NormalizaFactor = sqrt(NonCoherentIntegrations)*CoherentIntegrations*CodePeriod*fs;" ...
-"CN0_est_ind     = 1;"                              ...
+%% ---- Scenario Parameters
+corrSatPosition = 1.0e+07 * [
+    2.061934439245598  -0.649651248625989   1.515031823419662
+    2.652937217353064   0.225144209072909   0.245090150841460
+   -0.036582056912767   1.531548249671478   2.204309909466485
+    1.031402024072278   1.611770455054111   1.801481566078742
+    1.660579169172477   0.314602454675085   2.047357395811576
+    1.986519610236877  -1.663607551240955   0.522461680298307
+   -0.265437875221575  -1.573610606389880   2.123719767033498
+   -0.948907876055638  -1.438620519096841   2.407317325333366
+    1.479532383323564   0.751773843931400   2.450026136317899
+    1.777572228593643   2.192914078898261   0.888480393951951
 ];
-
-config = strjoin(cfgLines, newline);  % <-- TEXTO com a config
-
-% Executa a config também no workspace do SCRIPT (opcional, mas útil aqui)
-eval(config);
-
-%% -------------------------------------------------
+SatPosition  = corrSatPosition(1:7, :);
+% (Opcional) salve para carregar depois
+% save('SatPositions.mat','corrSatPosition');
+                                              
+%% ---- Simulation parameters"    
+CNosim = 30:1:50;
+Nexpe  = 250;
+RIMuse             = 0;
+estimateTrueNoise  = 1;
+% ---- 2-steps parameters"
+num2stepsIterations = 10;
 %% Alocação de memória
-%% -------------------------------------------------
-PosErrDPE  = zeros(length(CNosim), Nexpe);
+PosErrLS   = zeros(length(CNosim), Nexpe);
 CN0_est    = zeros(length(CNosim), Nexpe);
 cn0        = zeros(length(CNosim), numSV, Nexpe);
-
-%% -------------------------------------------------
 %% Geração de sinal (sigen struct)
-%% -------------------------------------------------
-% Agora, dentro de signalGen (e das demais), o eval(config) vai
-% executar exatamente o TEXTO acima no workspace delas.
-sigen     = signalGen(config);
-meanNoise = computeMeanNoise(config, sigen);
+% number of samples calculation
+% Number of samples of the Local Replica
+NsamplesLocal=CodePeriod*fs*CoherentIntegrations;   
+%Number of samples of the Received Signal (Data).
+NsamplesData=CodePeriod*fs*CoherentIntegrations*NonCoherentIntegrations;    
+%% memory allocation
+Range=zeros(1,numSV);
+x_local=zeros(numSV,NsamplesLocal);
+fft_local=zeros(numSV,NsamplesLocal);
+x_delay=zeros(numSV,NsamplesData);
+%% Compute range and fractional delays for each SV
+for kSV=1:numSV 
+    Range(kSV)                               =   norm(SatPosition(kSV,:) - UserPosition);    
+end
+
+FracDelay=mod(Range/c,CodePeriod);
+%% Generate local replica and delayed signals according to the computed delays
+PrevNCOIndex    =  -  FracDelay/Tc;
+randomDelay= 0;
+for kSV=1:numSV
+    Code                                    =   genCAcode(SatPRN(kSV));
+    Tchip                                   =   CodePeriod / length(Code);
+    ii                                      =   1 : NsamplesLocal;          % generating LGenBlocks samples
+    x_local(kSV,:)                                 =   Code((1 + mod(round((ii - 1) / fs / Tchip), length(Code))));
+%     fft_local(kSV,:) = fft(x_local(kSV,:),Nsamples);
+    ii                                      =   1 : NsamplesData;
+    x_delay(kSV,:)                                 =   Code((1 + mod(round(PrevNCOIndex(kSV)+randomDelay+(ii - 1) / fs / Tchip), length(Code))));
+end
+
+%% Filter local signal and generate its FFT 
+
+wn=pi*fn/(pi*fs/2);
+h=fir1(order,wn);
+for kSV=1:numSV
+    x_delay(kSV,:)  = filtfilt(h,1,x_delay(kSV,:));
+    x_local(kSV,:)  = filtfilt(h,1,x_local(kSV,:));
+    fft_local(kSV,:) = fft(x_local(kSV,:),NsamplesLocal);
+end
+
+%% Normalize Received Signal Power after filtering
+for kSV=1:numSV
+    x_delay(kSV,:)  = x_delay(kSV,:)*sqrt((NsamplesData/sum(x_delay(kSV,:).^2)));
+end
+
+%% gather outputs in a struct
+sigen.x_delay = x_delay;
+sigen.x_local = x_local;
+sigen.fft_local = fft_local;
+sigen.randomDelay = randomDelay;
+sigen.NsamplesLocal = NsamplesLocal;
+sigen.NsamplesData = NsamplesData;
 sigen.numSV = numSV;
+sigen.NonCoherentIntegrations = NonCoherentIntegrations;
+NsamplesData = sigen.NsamplesData;
+sigen.fs = fs;
+sigen.fn = fn;
+sigen.order = order;
+sigen.estimateTrueNoise = estimateTrueNoise;
+sigen.CodePeriod = CodePeriod;
+sigen.CoherentIntegrations = CoherentIntegrations;
 sigen.UserPosition = UserPosition;
-sigen.Tc = Tc;
-sigen.SatPosition = SatPosition;
+sigen.fs = fs;
 sigen.c = c;
+sigen.num2stepsIterations = num2stepsIterations;
+sigen.SatPosition = SatPosition;
+sigen.Tc = Tc;
 sigen.dt = dt;
 sigen.fs = fs;
 sigen.NormalizaFactor = NormalizaFactor;
@@ -100,37 +144,51 @@ sigen.contraction = contraction;
 sigen.fn = fn;
 sigen.CN0_est_ind = CN0_est_ind;
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+if estimateTrueNoise == 0
+    meanNoise = nan;
+else
+    %% Add AWGN noise to the transmitted signals
+    mean_noise=zeros(1,Nexpe);
+    for exp_idx=1:Nexpe
+        noise = ( sqrt(1/2)*randn(1,NsamplesData) + ...
+            1i* sqrt(1/2)*randn(1,NsamplesData) );
+        r = correlateSignal(sigen,noise);
 
-
+        mean_noise(exp_idx) = mean(mean(r,2));
+    end
+    meanNoise=mean(mean_noise);
+end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Start Simulation
 for CNo_idx = 1:length(CNosim)
-    CNosim(CNo_idx)
+    % disp([CNosim(CNo_idx)])
     for exp_idx = 1:Nexpe
         CNo = CNosim(CNo_idx) * ones(numSV,1);
         %% Signal + noise
-        x = receivedSignal(sigen, config, CNo);
+        x = receivedSignal(sigen, CNo);
         %% Perform coherent/non-coherent integration times
-        r = correlateSignal(sigen, config, x);
+        r = correlateSignal(sigen,x);
         %% Estimate CN0
-        cn0(CNo_idx,:,exp_idx) = estimateCn0(r, config, meanNoise);
+        cn0(CNo_idx,:,exp_idx) = estimateCn0(sigen, r, meanNoise);
+        %% 2-steps: Conventional approach estimation
+        % PosErrLS(CNo_idx,exp_idx) = conv2stepsPVT(sigen, r,numSV);
         %% DPE approach ARS (accelerated random search)
         [PosErrDPE(CNo_idx,exp_idx), CN0_est(CNo_idx,exp_idx)] = DPEarsPVT(r,sigen);
     end
 end
-
 % Compute RMSEs
 RMSE_DPE   = sqrt(mean(PosErrDPE.^2, 2));
-averageCn0 = mean(mean(cn0, 2), 3); 
+averageCn0 = mean(mean(cn0, 2), 3);
 
-%% Ziv-Zakai bound computation
-% computeZZB
+
+%% Cramer Rao Bound computation
 x_local = sigen.x_local;
 
 B_2=sum((diff(x_local(1,:))/dt).^2)/sum(x_local(1,:).^2);
 T=CodePeriod;
 D=T*c;
 M=numSV;
-
 P= 1/c*(UserPosition-SatPosition)./sqrt(sum((UserPosition-SatPosition).^2,2));
 
 Rd=[D^2/12 0 0; 0 D^2/12 0; 0 0 D^2/12 ];
@@ -139,29 +197,48 @@ varT=T^2/12;
 
 SNRdb=CNosim+10*log10(T);
 fZZLB_DPE = zeros(1,length(CNosim));
-for SNRloop=1:length(SNRdb)
-    SNR=10^(SNRdb(SNRloop)/10);
-    Jtau=diag(repmat(SNR*B_2*2,1,M));
-    J= P'*Jtau*P;
-    
+
+%% === CRB (2-steps) ===============================================
+SNRdb  = CNosim + 10*log10(T);
+fCRB_2SP  = zeros(1,length(CNosim));
+
+for k = 1:length(SNRdb)
+    SNR = 10^(SNRdb(k)/10);
+    % --- FIM dos atrasos (cada canal independente) ---
+    % CRB(tau_i) = 1/(2*SNR*B_2)  =>  J_tau(ii) = 2*SNR*B_2
+    Jtau = diag( 2*SNR*B_2 * ones(M,1) );
+    Jtau_dpe=diag(repmat(SNR*B_2*2,1,M));
+    J= P'*Jtau_dpe*P;
+    % --- CRB de posição (propagação via FIM geométrica) ---
+    % J_p = P' * Jtau * P    ,   CRB_p = inv(J_p)
+    Jp      = P' * Jtau * P;
+    CRB_2SP = inv(Jp);                          % [m^2]
+    fCRB_2SP(k) = sqrt( trace(CRB_2SP) );  % sqrt(sigma_x^2+sigma_y^2+sigma_z^2) 
+
     ZZLB_DPE= 1/16*Rd*2*q(sqrt(M*SNR))+inv(J)*gammainc(M*SNR/2,3/2);    
-    fZZLB_DPE(SNRloop)=sqrt(ZZLB_DPE(1,1)+ZZLB_DPE(2,2)+ZZLB_DPE(3,3));
+    fZZLB_DPE(k)=sqrt(ZZLB_DPE(1,1)+ZZLB_DPE(2,2)+ZZLB_DPE(3,3));
+    
 end
 
+%% === Tabela CN0 vs RMSE_LS e CRB_2SP ==============================
+T = table(CNosim(:), RMSE_DPE(:), fCRB_2SP(:), ...
+          'VariableNames', {'CN0_dBHz','RMSE_DPE_m','CRB_DPE_m'});
 
-%% -------------------------------------------------
-%% PLOTS
-%% -------------------------------------------------
-figure,
-h = semilogy(CNosim, RMSE_DPE, 'b', CNosim, fZZLB_DPE, 'r');
-legend('MLE DPE','ZZB DPE', 'fontsize', 16)
-grid
-set(h, 'Linewidth', 2)
-xlabel('CN0 [dB-Hz]')
-ylabel('RMSE [m]')
+% Para exibir no Command Window já formatado:
+disp(T)
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% return
+%% === PLOT conjunto (LS simulado x ZZB x CRB) ===========================
+figure;
+h = semilogy( CNosim, fZZLB_DPE,   'b-.', ...
+               CNosim, fCRB_2SP,  'k-'  );
+legend('DPE','CRB DPE','fontsize',16);
+grid on; set(h,'LineWidth',2);
+xlabel('C/N_0 [dB-Hz]'); ylabel('RMSE [m]');
 
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function CAcode = genCAcode(PRN)
 % generateCAcode.m generates one of the 32 GPS satellite C/A codes.
 %
@@ -254,132 +331,39 @@ g2 = [g2(1023-g2shift+1 : 1023), g2(1 : 1023-g2shift)];
 CAcode = -(g1 .* g2);
 end
 
-
-function [sigen] = signalGen(config)
-
-
-%% load configuration file
-eval(config)
-
-
-%% number of samples calculation
-NsamplesLocal=CodePeriod*fs*CoherentIntegrations;   % Number of samples of the Local Replica
-NsamplesData=CodePeriod*fs*CoherentIntegrations*NonCoherentIntegrations;    %Number of samples of the Received Signal (Data).
-
-
-%% memory allocation
-Range=zeros(1,numSV);
-x_local=zeros(numSV,NsamplesLocal);
-fft_local=zeros(numSV,NsamplesLocal);
-x_delay=zeros(numSV,NsamplesData);
-
-
-%% Compute range and fractional delays for each SV
-
-for kSV=1:numSV 
-    Range(kSV)                               =   norm(SatPosition(kSV,:) - UserPosition);    
-end
-
-FracDelay=mod(Range/c,CodePeriod);
-
-
-%% Generate local replica and delayed signals according to the computed delays
-   
-PrevNCOIndex    =  -  FracDelay/Tc;
-randomDelay= 0;
-for kSV=1:numSV
-    Code                                    =   genCAcode(SatPRN(kSV));
-    Tchip                                   =   CodePeriod / length(Code);
-    ii                                      =   1 : NsamplesLocal;          % generating LGenBlocks samples
-    x_local(kSV,:)                                 =   Code((1 + mod(round((ii - 1) / fs / Tchip), length(Code))));
-%     fft_local(kSV,:) = fft(x_local(kSV,:),Nsamples);
-    ii                                      =   1 : NsamplesData;
-    x_delay(kSV,:)                                 =   Code((1 + mod(round(PrevNCOIndex(kSV)+randomDelay+(ii - 1) / fs / Tchip), length(Code))));
-end
-
-%% Filter local signal and generate its FFT 
-
-wn=pi*fn/(pi*fs/2);
-h=fir1(order,wn);
-for kSV=1:numSV
-    x_delay(kSV,:)  = filtfilt(h,1,x_delay(kSV,:));
-    x_local(kSV,:)  = filtfilt(h,1,x_local(kSV,:));
-    fft_local(kSV,:) = fft(x_local(kSV,:),NsamplesLocal);
-end
-
-%% Normalize Received Signal Power after filtering
-
-for kSV=1:numSV
-    x_delay(kSV,:)  = x_delay(kSV,:)*sqrt((NsamplesData/sum(x_delay(kSV,:).^2)));
-end
-
-
-%% gather outputs in a struct
-sigen.x_delay = x_delay;
-sigen.x_local = x_local;
-sigen.fft_local = fft_local;
-sigen.randomDelay = randomDelay;
-sigen.NsamplesLocal = NsamplesLocal;
-sigen.NsamplesData = NsamplesData;
-end
-
-function r = correlateSignal(sigen,config,x_delay_noise)
-
-
-%% load configuration file
-eval(config)
+function r = correlateSignal(sigen, x_delay_noise)
 
 fft_local = sigen.fft_local;
 NsamplesLocal = sigen.NsamplesLocal;
-
-
-%% memory allocation
+numSV = sigen.numSV;
+NonCoherentIntegrations = sigen.NonCoherentIntegrations;
+% memory allocation
 r=zeros(numSV,NsamplesLocal);
-    %% Perform NonCoherentIntegrations times non coherent integrations of CoherentIntegrations times coherent integrations.
+% Perform NonCoherentIntegrations times non coherent integrations of
+% CoherentIntegrations times coherent integrations.
 for kSV=1:numSV
-    for idx_nc=1:NonCoherentIntegrations
-        r(kSV,:)=r(kSV,:)+abs(ifft(fft(x_delay_noise(1,NsamplesLocal*(idx_nc-1)+1:NsamplesLocal*idx_nc),NsamplesLocal) .* conj(fft_local(kSV,:)))).^2;
+    for idx_nc = 1:NonCoherentIntegrations
+        r(kSV,:) = r(kSV,:) + ...
+            abs(ifft(fft(x_delay_noise(1,NsamplesLocal*(idx_nc-1) + ...
+            1:NsamplesLocal*idx_nc),NsamplesLocal) .* ...
+            conj(fft_local(kSV,:)))).^2;
     end
 end
 end
 
-function meanNoise = computeMeanNoise(config,sigen)
-
-%% load configuration file
-eval(config)
-
-NsamplesData = sigen.NsamplesData;
-if estimateTrueNoise == 0
-    meanNoise = nan;
-else
-    %% Add AWGN noise to the transmitted signals
-    mean_noise=zeros(1,Nexpe);
-    for exp_idx=1:Nexpe
-        noise = ( sqrt(1/2)*randn(1,NsamplesData) +1i* sqrt(1/2)*randn(1,NsamplesData) );
-        r = correlateSignal(sigen,config,noise);
-        mean_noise(exp_idx) = mean(mean(r,2));
-    end
-    meanNoise=mean(mean_noise);
-end
-end
-
-function x = receivedSignal(sigen,config,CNo)
-
-
-%% load configuration file
-eval(config)
+function x = receivedSignal(sigen,CNo)
 
 x_delay = sigen.x_delay;
 NsamplesData = sigen.NsamplesData;
-
-
+numSV = sigen.numSV;
+fs = sigen.fs;
+fn = sigen.fn;
+order = sigen.order;
 %% memory allocation
 x_delay_noise=zeros(numSV,NsamplesData);
-
-
-
 %% Add AWGN noise to the transmitted signals
-noise = ( sqrt(1/2)*randn(1,NsamplesData) +1i* sqrt(1/2)*randn(1,NsamplesData) );
+noise = ( sqrt(1/2)*randn(1,NsamplesData) + ...
+    1i* sqrt(1/2)*randn(1,NsamplesData) );
 for kSV=1:numSV
     if CNo(kSV)<100
         % Sets amplitude assuming complex-noise power equal to 1
@@ -399,10 +383,11 @@ h=fir1(order,wn);
 x  = filtfilt(h,1,x);
 end
 
-function cn0 = estimateCn0(r,config,meanNoise)
+function cn0 = estimateCn0(sigen, r, meanNoise)
 
-%% load configuration file
-eval(config)
+estimateTrueNoise = sigen.estimateTrueNoise;
+CodePeriod = sigen.CodePeriod;
+CoherentIntegrations = sigen.CoherentIntegrations;
 
 %% find maximum value and its argument
 [energy, maxPos] = max(r,[],2);
@@ -436,6 +421,59 @@ end
 snr =(energy+meanNoise) ./ meanNoise;
 cn0 = 10*log10(snr/(CodePeriod*CoherentIntegrations));
 
+end
+
+function PosErrLS = conv2stepsPVT(sigen, r, numSV)
+
+UserPosition = sigen.UserPosition;
+fs = sigen.fs;
+c = sigen.c;
+num2stepsIterations = sigen.num2stepsIterations;
+SatPosition = sigen.SatPosition;
+
+
+%% memory allocation
+EstRange=zeros(1,numSV);
+
+
+RefPos=UserPosition+10*(2*rand(3,1)-1)';
+EstRxPVT= [RefPos];
+
+
+%Estimate time delays
+[~, maxPos] = max(r,[],2);
+maxPos=maxPos-1;
+
+
+
+EstFracDelay=maxPos/fs;
+EstFracRange=EstFracDelay * c;
+
+% Loop over iterations.
+for kIterations                                     =   1 : num2stepsIterations
+    
+    
+    % Loop over satellites.
+    for kSV                                         =   1 : numSV
+        EstRange(kSV)                               =   norm(SatPosition(kSV,:) - EstRxPVT(1:3));
+        
+        numH                                        =   SatPosition(kSV, :) - EstRxPVT(1:3);
+        denH                                        =   norm(numH);
+        H(kSV, 1:3)                      =   - numH / denH;
+        %          H(kSV,4)=1;
+        
+    end
+    
+    corrP                                                   =   (EstFracRange - EstRange') / c;
+    corrP_noAmbg                                            =   wrap(rem(corrP, 1e-3), 0.5e-3);
+    
+    corrFracPseudorange                                     =   corrP_noAmbg * c;
+    
+    deltaPVT                                                =   ((H' * H) \ H') * corrFracPseudorange;
+    EstRxPVT                                         =   EstRxPVT + deltaPVT.';
+end
+
+PosErrLS=norm(EstRxPVT(1:3)-UserPosition);
 end
 
 function answer = q(x) 
@@ -557,4 +595,5 @@ end
 PosErrDPE=norm(gamma_est(:,it+1)'-UserPosition);
 CN0_est = 10.*log10(amp_est(:, it+1).*(2*fn)); 
 CN0_est = CN0_est (CN0_est_ind);
+
 end
