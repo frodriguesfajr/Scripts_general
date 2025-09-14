@@ -4,11 +4,15 @@ close all;
 clear;
 format long;
 
-rng(42)
+% rng(42)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 c   = 299792458;
 f0  = 1575.42e6;
 %% ---- Signal Parameters (GPS E1)
+numSV        = 7;
+SatPRN       = [12 15 17 19 24 25 32];
+UserPosition = [3.915394273911475e+06 2.939638207807819e+05 ...
+    5.009529661006817e+06];  
 CodePeriod               = 1e-3;
 CoherentIntegrations     = 1;
 NonCoherentIntegrations  = 1;
@@ -21,6 +25,18 @@ fs                       = 50e6;
 dt                       = 1/fs;
 fn                       = 2e6;
 order                    = 36;
+Niter          = 10000;
+gamma_est      = zeros(3, Niter+1);
+amp_est        = zeros(numSV, Niter+1);
+EstRxClkBias   = zeros(1, Niter+1);
+contraction    = 2;
+dmax           = 10000;
+dmin           = 0.01;
+dmax_clk       = dt/10;
+dmin_clk       = dt/100;
+NormalizaFactor = sqrt(NonCoherentIntegrations)*CoherentIntegrations*CodePeriod*fs;
+CN0_est_ind     = 1;
+
 %% ---- Scenario Parameters
 corrSatPosition = 1.0e+07 * [
     2.061934439245598  -0.649651248625989   1.515031823419662
@@ -34,13 +50,10 @@ corrSatPosition = 1.0e+07 * [
     1.479532383323564   0.751773843931400   2.450026136317899
     1.777572228593643   2.192914078898261   0.888480393951951
 ];
+SatPosition  = corrSatPosition(1:7, :);
 % (Opcional) salve para carregar depois
 % save('SatPositions.mat','corrSatPosition');
-numSV        = 7;
-SatPosition  = corrSatPosition(1:7, :);
-SatPRN       = [12 15 17 19 24 25 32];
-UserPosition = [3.915394273911475e+06 2.939638207807819e+05 ...
-    5.009529661006817e+06];                                                
+                                              
 %% ---- Simulation parameters"    
 CNosim = 30:5:50;
 Nexpe  = 2;
@@ -77,7 +90,6 @@ for kSV=1:numSV
     Tchip                                   =   CodePeriod / length(Code);
     ii                                      =   1 : NsamplesLocal;          % generating LGenBlocks samples
     x_local(kSV,:)                                 =   Code((1 + mod(round((ii - 1) / fs / Tchip), length(Code))));
-%     fft_local(kSV,:) = fft(x_local(kSV,:),Nsamples);
     ii                                      =   1 : NsamplesData;
     x_delay(kSV,:)                                 =   Code((1 + mod(round(PrevNCOIndex(kSV)+randomDelay+(ii - 1) / fs / Tchip), length(Code))));
 end
@@ -118,6 +130,19 @@ sigen.fs = fs;
 sigen.c = c;
 sigen.num2stepsIterations = num2stepsIterations;
 sigen.SatPosition = SatPosition;
+sigen.Tc = Tc;
+sigen.dt = dt;
+sigen.fs = fs;
+sigen.NormalizaFactor = NormalizaFactor;
+sigen.dmax = dmax;
+sigen.dmax_clk = dmax_clk;
+sigen.Niter = Niter;
+sigen.dmin = dmin;
+sigen.dmin_clk = dmin_clk;
+sigen.contraction = contraction;
+sigen.fn = fn;
+sigen.CN0_est_ind = CN0_est_ind;
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if estimateTrueNoise == 0
     meanNoise = nan;
@@ -134,73 +159,74 @@ else
     meanNoise=mean(mean_noise);
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Start Simulation
-for CNo_idx = 1:length(CNosim)
-    % disp([CNosim(CNo_idx)])
-    for exp_idx = 1:Nexpe
-        CNo = CNosim(CNo_idx) * ones(numSV,1);
-        %% Signal + noise
-        x = receivedSignal(sigen, CNo);
-        %% Perform coherent/non-coherent integration times
-        r = correlateSignal(sigen,x);
-        %% Estimate CN0
-        cn0(CNo_idx,:,exp_idx) = estimateCn0(sigen, r, meanNoise);
-        %% 2-steps: Conventional approach estimation
-        PosErrLS(CNo_idx,exp_idx) = conv2stepsPVT(sigen, r,numSV);
-    end
-end
-% Compute RMSEs
-RMSE_LS    = sqrt(mean(PosErrLS.^2, 2));
-averageCn0 = mean(mean(cn0, 2), 3);
-
-
 %% Cramer Rao Bound computation
 x_local = sigen.x_local;
 
+% B_2=sum((diff(x_local(1,:))/dt).^2)/sum(x_local(1,:).^2);
+dt = 1/fs;
 B_2=sum((diff(x_local(1,:))/dt).^2)/sum(x_local(1,:).^2);
 T=CodePeriod;
 D=T*c;
 M=numSV;
-P= 1/c*(UserPosition-SatPosition)./sqrt(sum((UserPosition-SatPosition).^2,2));
+% P= 1/c*(UserPosition-SatPosition)./sqrt(sum((UserPosition-SatPosition).^2,2));
+normPos = vecnorm(sigen.UserPosition-sigen.SatPosition,2,2); % 3d norm
+P= 1/c*(UserPosition-SatPosition)./normPos;
 
 Rd=[D^2/12 0 0; 0 D^2/12 0; 0 0 D^2/12 ];
 RT=[T^2/12 0 0; 0 T^2/12 0; 0 0 T^2/12 ];
 varT=T^2/12;
 
 SNRdb=CNosim+10*log10(T);
-
-%% === CRB (2-steps) ===============================================
-SNRdb  = CNosim + 10*log10(T);
+fZZLB_DPE = zeros(1,length(CNosim));
+fZZB_DPE  = zeros(1,length(CNosim));
 fCRB_2SP  = zeros(1,length(CNosim));
+fZZLB_2SP = zeros(1,length(CNosim));
+
+%% === CRB DPE ===============================================
+SNRdb  = CNosim + 10*log10(T);
+fCRB_DPE  = zeros(1,length(CNosim));
+M=numSV;
+
 
 for k = 1:length(SNRdb)
     SNR = 10^(SNRdb(k)/10);
-    % --- FIM dos atrasos (cada canal independente) ---
-    % CRB(tau_i) = 1/(2*SNR*B_2)  =>  J_tau(ii) = 2*SNR*B_2
+
+     % --- FIM dos atrasos (cada SV): J_tau(ii) = 2 * SNR * B_2
     Jtau = diag( 2*SNR*B_2 * ones(M,1) );
-    % --- CRB de posição (propagação via FIM geométrica) ---
-    % J_p = P' * Jtau * P    ,   CRB_p = inv(J_p)
-    Jp      = P' * Jtau * P;
-    CRB_2SP = inv(Jp);                          % [m^2]
-    fCRB_2SP(k) = sqrt( trace(CRB_2SP) );  % sqrt(sigma_x^2+sigma_y^2+sigma_z^2)    
+
+    J= P'*Jtau*P;
+
+
+    % --- Projeção para posição: J_p = P' * J_tau * P
+    Jp  = P' * Jtau * P;            % [1/m^2]
+    
+    CRB = inv(Jp);                  % [m^2]
+
+    % Métrica escalar (RMSE 3D)
+    fCRB_DPE(k) = sqrt( trace(CRB) );              % [m]
+    ZZLB_tau=eye(M)* (1/8*varT*2*q(sqrt(SNR))+(1/(SNR*B_2*2))*gammainc(SNR/2,3/2));
+    ZZLB_2SP=(P'*P)^-1*P'*(ZZLB_tau)*((P'*P)^-1*P')';
+    
+    fZZLB_2SP(k)=sqrt(ZZLB_2SP(1,1)+ZZLB_2SP(2,2)+ZZLB_2SP(3,3));
+
+    ZZLB_DPE= 1/16*Rd*2*q(sqrt(M*SNR))+inv(J)*gammainc(M*SNR/2,3/2);    
+    fZZLB_DPE(k)=sqrt(ZZLB_DPE(1,1)+ZZLB_DPE(2,2)+ZZLB_DPE(3,3));
     
 end
 
-%% === Tabela CN0 vs RMSE_LS e CRB_2SP ==============================
-T = table(CNosim(:), RMSE_LS(:), fCRB_2SP(:), ...
-          'VariableNames', {'CN0_dBHz','RMSE_LS_m','CRB_2SP_m'});
+%% ===== Tabela CN0 vs RMSE_DPE, CRB_DPE e ZZB_DPE ========================
+T_CRB_ZZB = table(CNosim(:), fZZLB_2SP(:), fZZLB_DPE(:), ...
+                  'VariableNames', {'CN0_dBHz','ZZB_LS_m','ZZB_DPE_m'});
+disp(T_CRB_ZZB)
 
-% Para exibir no Command Window já formatado:
-disp(T)
-
-% return
-%% === PLOT conjunto (LS simulado x ZZB x CRB) ===========================
+%% ===== Plot comparando DPE x CRB-DPE x ZZB-DPE ==========================
 figure;
-h = semilogy( CNosim, RMSE_LS,   'b-.', ...
-               CNosim, fCRB_2SP,  'k-'  );
-legend('2SP','CRB 2SP','fontsize',16);
+h = semilogy(CNosim, fZZLB_2SP, 'b-.', ...
+             CNosim, fZZLB_DPE, 'k-');
+legend('ZZB-LS','ZZB-DPE','fontsize',16);
 grid on; set(h,'LineWidth',2);
-xlabel('C/N_0 [dB-Hz]'); ylabel('RMSE [m]');
+xlabel('C/N_0 [dB-Hz]'); ylabel('Erro [m]');
+
 
 
 
@@ -389,58 +415,6 @@ cn0 = 10*log10(snr/(CodePeriod*CoherentIntegrations));
 
 end
 
-function PosErrLS = conv2stepsPVT(sigen, r, numSV)
-
-UserPosition = sigen.UserPosition;
-fs = sigen.fs;
-c = sigen.c;
-num2stepsIterations = sigen.num2stepsIterations;
-SatPosition = sigen.SatPosition;
-
-
-%% memory allocation
-EstRange=zeros(1,numSV);
-
-
-RefPos=UserPosition+10*(2*rand(3,1)-1)';
-EstRxPVT= [RefPos];
-
-
-%Estimate time delays
-[~, maxPos] = max(r,[],2);
-maxPos=maxPos-1;
-
-
-
-EstFracDelay=maxPos/fs;
-EstFracRange=EstFracDelay * c;
-
-% Loop over iterations.
-for kIterations                                     =   1 : num2stepsIterations
-    
-    
-    % Loop over satellites.
-    for kSV                                         =   1 : numSV
-        EstRange(kSV)                               =   norm(SatPosition(kSV,:) - EstRxPVT(1:3));
-        
-        numH                                        =   SatPosition(kSV, :) - EstRxPVT(1:3);
-        denH                                        =   norm(numH);
-        H(kSV, 1:3)                      =   - numH / denH;
-        %          H(kSV,4)=1;
-        
-    end
-    
-    corrP                                                   =   (EstFracRange - EstRange') / c;
-    corrP_noAmbg                                            =   wrap(rem(corrP, 1e-3), 0.5e-3);
-    
-    corrFracPseudorange                                     =   corrP_noAmbg * c;
-    
-    deltaPVT                                                =   ((H' * H) \ H') * corrFracPseudorange;
-    EstRxPVT                                         =   EstRxPVT + deltaPVT.';
-end
-
-PosErrLS=norm(EstRxPVT(1:3)-UserPosition);
-end
 
 function answer = q(x) 
 answer = erfc(x/sqrt(2))/2;
@@ -451,5 +425,115 @@ function x = wrap( x, x_max )
 while( sum( abs(x) > x_max ) ~= 0)
     x(abs(x)>x_max)  =   x(abs(x)>x_max) - sign(x(abs(x)>x_max))*2*x_max;
 end
+
+end
+
+function [PosErrDPE, CN0_est] = DPEarsPVT(r, sigen)
+
+%% load configuration file
+% eval(config)
+numSV = sigen.numSV;
+UserPosition = sigen.UserPosition;
+Tc = sigen.Tc;
+SatPosition = sigen.SatPosition;
+c = sigen.c;
+dt = sigen.dt;
+fs = sigen.fs;
+NormalizaFactor = sigen.NormalizaFactor;
+dmax = sigen.dmax;
+dmax_clk = sigen.dmax_clk;
+Niter = sigen.Niter;
+dmin = sigen.dmin;
+dmin_clk = sigen.dmin_clk;
+contraction = sigen.contraction;
+fn = sigen.fn;
+CN0_est_ind = sigen.CN0_est_ind;
+
+randomDelay = 0; %%% magic number....
+
+%% memory allocation
+EstRange=zeros(1,numSV);
+MaxCorr=zeros(1,numSV);
+
+gamma_est(:,1) = UserPosition+100*(2*rand(3,1)-1)';
+EstRxClkBias(:,1)=-randomDelay*Tc;
+
+
+for kSV                                         =   1 : numSV
+    % Compute range estimate with corrected satellite position, atmosphere
+    % corrections and satellite clock error.
+    EstRange(kSV)                               =   norm(SatPosition(kSV,:) - gamma_est(:,1)');
+end;
+
+EstFracDelay=mod(EstRange/c+EstRxClkBias(:,1)+dt,1e-3);
+% EstFracDelay=EstFracDelay+EstRxClkBias(:,1);
+% EstFracDelay(EstFracDelay<0)=EstFracDelay(EstFracDelay<0)+1e-3;
+% EstFracDelay(EstFracDelay>1e-3)=EstFracDelay(EstFracDelay>1e-3)-1e-3;
+
+for kSV                                         =   1 : numSV
+    
+    %     round(FracDelay*Fs)
+    aux=round(EstFracDelay(kSV)*fs);
+    aux(aux==0)=1e-3*fs;
+    MaxCorr(kSV)=r(kSV,aux);
+    
+end
+J_ant=sum(MaxCorr);
+amp_est(:,1) = MaxCorr./NormalizaFactor^2;
+
+d = dmax;
+d_clk=dmax_clk;
+
+for it = 1:Niter-1        %%% ARS algorithm iterations
+    
+    % draw a random movement
+    rand_point = gamma_est(:,it) + d*(2*rand(3,1)-1);
+    % rand_clk = EstRxClkBias(:,it)+d_clk*(2*rand-1);
+    rand_clk = 0;
+    for kSV                                         =   1 : numSV
+        
+        EstRange(kSV)                               =   norm(SatPosition(kSV,:) - rand_point');
+    end
+    
+    EstFracDelay=mod(EstRange/c+rand_clk+dt,1e-3);
+    
+    for kSV                                         =   1 : numSV
+        
+        aux=round(EstFracDelay(kSV)*fs);
+        aux(aux==0)=1e-3*fs;
+        MaxCorr(kSV)=r(kSV,aux);
+        
+    end
+    
+    
+    J = sum(MaxCorr);
+    
+    % select or discard point
+    if J > J_ant
+        gamma_est(:,it+1) = rand_point;
+        EstRxClkBias(:,it+1)=rand_clk;
+        amp_est(:, it+1) = MaxCorr./NormalizaFactor^2;
+        J_ant = J;
+        d = dmax;
+        d_clk=dmax_clk;
+    else
+        gamma_est(:,it+1) = gamma_est(:,it);
+        EstRxClkBias(:,it+1)=EstRxClkBias(:,it);
+        amp_est(:,it+1) = amp_est(:,it);
+        d = d/contraction;
+        d_clk=d_clk/contraction;
+    end
+    if d < dmin
+        d = dmax;
+    end
+    
+    if d_clk < dmin_clk
+        d_clk =dmax_clk;
+    end
+end
+% DPE position estimation
+PosErrDPE=norm(gamma_est(:,it+1)'-UserPosition);
+CN0_est = 10.*log10(amp_est(:, it+1).*(2*fn)); 
+CN0_est = CN0_est (CN0_est_ind);
 
 end
