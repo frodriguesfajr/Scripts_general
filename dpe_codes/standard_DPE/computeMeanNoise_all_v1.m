@@ -187,9 +187,9 @@ sigen.CN0_est_ind = 1;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % sigen = signalGen(config);
 meanNoise = computeMeanNoise(sigen);
-% return
-config = 'ConfigFile';
-eval(config)
+% % return
+% config = 'ConfigFile';
+% eval(config)
 
 
 
