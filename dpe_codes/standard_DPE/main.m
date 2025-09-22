@@ -2,17 +2,8 @@ close all;
 clear; 
 clc; 
 format long;
-% rng(42)  % (opcional) fixe a semente p/ reprodutibilidade
 
 %% ===================== Cenário / Geometria ================================
-
-% --- Exemplo antigo comentado (gera constelação por outra função) ----------
-% % SatPRN=  [2 12 15 17 19 24 25 28 32];
-% M = 15;  % número de SVs
-% UserPosition = [3.915394273911475e+06 2.939638207807819e+05 5.009529661006817e+06];
-% [SatPosition, SatPRN, azel_deg, PDOP] = randomConstellation(UserPosition, M, 5, [1.5 4.5], 1000);
-% fprintf('Constelação gerada: PDOP = %.2f\n', PDOP);
-% disp(table(SatPRN(:), azel_deg(:,1), azel_deg(:,2), 'VariableNames', {'PRN','Az_deg','El_deg'}));
 
 % --- Coordenadas aproximadas do CT/UFRJ (ajuste conforme o ponto exato) ---
 lat = -22.8596582;      % [graus]
@@ -21,22 +12,22 @@ h   = 10;               % [m] altura elipsoidal (estimativa)
 
 UserPosition = llh2ecef(lat, lon, h);   % [x y z] ECEF (m)
 
-M = 9;                      % nº de SVs na constelação
+M = 7;                      % nº de SVs na constelação
 numSV = M;                  % redundante, mas usado adiante
 
 % --- Gera geometria "boa" (PDOP baixo) com máscara de 5° e janela alvo -----
 [SatPosition, SatPRN, azel_deg, PDOP] = randomConstellationPDOP(UserPosition, M, ...
-    'good', 5, [1.5 3.0], 3000);
+    'good', 5, [1.5 1.55], 3000);
 fprintf('PDOP (good): %.2f\n', PDOP);
 
 % % --- Alternativa: geometria "ruim" (PDOP alto) ---------------------------
 % [SatPosition, SatPRN, azel_deg, PDOP] = randomConstellationPDOP(UserPosition, M, ...
-%     'bad', 5, [8 20], 3000);
+%     'good', 5, [5 5.2], 3000);
 % fprintf('PDOP (bad): %.2f\n', PDOP);
 %% ===================== Parâmetros de Simulação ============================
 
-CNosim = 30:5:50;       % vetor de C/N0 em dB-Hz (cenários)
-Nexpe  = 5;             % nº de repetições por C/N0 p/ estatística (RMSE)
+CNosim = 30:1:50;       % vetor de C/N0 em dB-Hz (cenários)
+Nexpe  = 200;             % nº de repetições por C/N0 p/ estatística (RMSE)
 
 % Alocação de memória p/ erros de posição (LS e DPE)
 PosErrLS  = zeros(length(CNosim), Nexpe);
