@@ -18,95 +18,176 @@ format long;
 rng(42)
 
 %% Signal generation (sigen struct)
-% sigen.NsamplesLocal = 50000;
-% sigen.NsamplesLocal = 50000;
-% sigen.randomDelay = 0;
-%% Configuration file for parameters adjustment
-
-
-%% Constants.
-c                                                   =   299792458;                                  %   Speed of light.
-f0                                                  =   1575.42e6;                                  %   Carrier frequency (L1-E1 band).
-
-%% $Signal Parameters
-% GPS E1
-CodePeriod  =   1e-3;               % Code Period
-CoherentIntegrations= 1;            % Number of Coherent Integrations
-NonCoherentIntegrations = 1;        % Number o Non Coherent Integrations
-m=1;                                % m
-n=1;                                % n
-type='BPSK';                        % BPSK, BOCcos, BOCsin
-Tc=1/(n*1.023e6);                   % Chip time
-Ts=1/(2*m*1.023e6);
-fs=50e6;                            % Sampling frequency
-dt=1/fs;                            % Sampling period
-fn=2e6;
-order=36;
 %% Scenario Parameters
 % Set GPS SVs and user positions
-load('SatPositions.mat')
+corrSatPosition = 1.0e+07 * [
+    2.061934439245598  -0.649651248625989   1.515031823419662
+    2.652937217353064   0.225144209072909   0.245090150841460
+   -0.036582056912767   1.531548249671478   2.204309909466485
+    1.031402024072278   1.611770455054111   1.801481566078742
+    1.660579169172477   0.314602454675085   2.047357395811576
+    1.986519610236877  -1.663607551240955   0.522461680298307
+   -0.265437875221575  -1.573610606389880   2.123719767033498
+   -0.948907876055638  -1.438620519096841   2.407317325333366
+    1.479532383323564   0.751773843931400   2.450026136317899
+    1.777572228593643   2.192914078898261   0.888480393951951
+];
 numSV=7;
 SatPosition=corrSatPosition(1:7, :);
 SatPRN=  [12    15    17    19    24    25    32 ];
 UserPosition=[3.915394273911475e+06 2.939638207807819e+05 5.009529661006817e+06];
-
 %% Simulation parameters
 % Set C/N0 (dB Hz) of each SV signal
 CNosim = 30:5:50;
 % Number of experiments for each simulated C/N0
 Nexpe = 5;
-% Simulate MLE flag
-simulate_mle = 1;
-% Plot bound flag
-compute_zzb = 1;
-% Apply RIM flag
-RIMuse = 0;
-% EstimateTrueNoise
-estimateTrueNoise = 1;
-% Plot estimated CN0
-plot_estimated_cn0 = 1;
-
-%% 2-steps parameters
-% LS iterations
-num2stepsIterations = 10;
-
-%% DPE parameters (ARS)
-
-Niter=10000;
-gamma_est=zeros(3,Niter+1);
-amp_est = zeros(numSV, Niter+1);
-EstRxClkBias=zeros(1,Niter+1);
-% EstRxClkBias=dt*1.3;
-contraction = 2;          % contraction parameter
-dmax = 10000;
-dmin = 0.01;
-dmax_clk=dt/10;
-dmin_clk=dt/100;
-
-
-NormalizaFactor = sqrt(NonCoherentIntegrations)*CoherentIntegrations*CodePeriod*fs;
-CN0_est_ind = 1;
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% number of samples calculation
-NsamplesLocal=CodePeriod*fs*CoherentIntegrations;   % Number of samples of the Local Replica
-
-
-
 %% Memory allocation.
 PosErrLS=zeros(length(CNosim),Nexpe);
 PosErrDPE=zeros(length(CNosim),Nexpe);
 CN0_est=zeros(length(CNosim),Nexpe);
 cn0= zeros(length(CNosim),numSV,Nexpe);
-%% memory allocation
+%% Signal Parameters
+% GPS E1
+c = 299792458; %   Speed of light.
+f0 =   1575.42e6; %   Carrier frequency (L1-E1 band).
+CodePeriod = 1e-3;
+fs = 50e6; % Sampling frequency
+dt = 1/fs; % Sampling period
+gnss_input.CodePeriod = CodePeriod;
+gnss_input.CoherentIntegrations= 1; % Number of Coherent Integrations
+gnss_input.NonCoherentIntegrations = 1; % Number o Non Coherent Integrations
+gnss_input.m=1; % m
+gnss_input.n=1; % n
+gnss_input.type='BPSK'; % BPSK, BOCcos, BOCsin
+gnss_input.Tc = 1/(gnss_input.n*1.023e6); % Chip time
+gnss_input.Ts = 1/(2*gnss_input.m*1.023e6);
+gnss_input.fs = fs;
+gnss_input.dt = dt; % Sampling period
+gnss_input.fn = 2e6;
+gnss_input.order = 36;
+gnss_input.numSV = numSV;
+gnss_input.SatPosition = SatPosition;
+gnss_input.UserPosition = UserPosition;
+gnss_input.c = c;
+gnss_input.SatPRN = SatPRN;
+%% 2-steps parameters
+% LS iterations
+ls_input.UserPosition = UserPosition;
+ls_input.SatPosition = SatPosition;
+ls_input.c = c;
+ls_input.numSV = numSV;
+ls_input.fs = gnss_input.fs;
+ls_input.num2stepsIterations = 10;
+%% DPE parameters (ARS)
+dpe_input.UserPosition = UserPosition;
+dpe_input.c = c;
+dpe_input.numSV = numSV;
+dpe_input.fs = gnss_input.fs;
+dpe_input.fn = gnss_input.fn;
+dpe_input.Tc = 1/(gnss_input.n*1.023e6); % Chip time
+dpe_input.SatPosition = SatPosition;
+dpe_input.Niter=10000;
+dpe_input.contraction = 2;          % contraction parameter
+dpe_input.dmax = 10000;
+dpe_input.dmin = 0.01;
+dpe_input.dmax_clk=gnss_input.dt/10;
+dpe_input.dmin_clk=gnss_input.dt/100;
+dpe_input.NormalizaFactor = sqrt(gnss_input.NonCoherentIntegrations)*gnss_input.CoherentIntegrations*gnss_input.CodePeriod*gnss_input.fs;
+dpe_input.CN0_est_ind = 1;
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+sigen = signalGen(gnss_input);
+sigen.estimateTrueNoise = 1;
+sigen.Nexpe = Nexpe;
+sigen.numSV = numSV;
+% meanNoise = computeMeanNoise(sigen);
+
+NsamplesData = sigen.NsamplesData;
+% estimateTrueNoise = sigen.estimateTrueNoise;
+% Nexpe = sigen.Nexpe;
+
+% if estimateTrueNoise == 0
+%     meanNoise = nan;
+% else
+%% Add AWGN noise to the transmitted signals
+mean_noise=zeros(1,Nexpe);
+for exp_idx=1:Nexpe
+    noise = ( sqrt(1/2)*randn(1,NsamplesData) +1i* ...
+        sqrt(1/2)*randn(1,NsamplesData) );
+    r = correlateSignal(sigen,noise);
+    mean_noise(exp_idx) = mean(mean(r,2));
+end
+meanNoise=mean(mean_noise);
+
+    %% Start Simulation
+for CNo_idx=1:length(CNosim)
+    CNosim(CNo_idx)
+    for exp_idx=1:Nexpe
+        CNo=CNosim(CNo_idx)*ones(numSV,1);
+            
+        %% Signal + noise 
+        x = receivedSignal(sigen,CNo);
+            
+        %% Perform coherent/non-coherent integration times
+        r = correlateSignal(sigen,x);
+            
+        %% 2-steps: Conventional approach estimation
+        PosErrLS(CNo_idx,exp_idx) = conv2stepsPVT(r,ls_input);
+                                               
+        %% DPE approach ARS (accelerated random search)
+        [PosErrDPE(CNo_idx,exp_idx), CN0_est(CNo_idx,exp_idx)] = DPEarsPVT(r,dpe_input);
+    end
+end
+% Compute RMSEs
+RMSE_LS=sqrt(mean(PosErrLS.^2,2));
+RMSE_DPE=sqrt(mean(PosErrDPE.^2,2));
+averageCn0= (mean(mean(cn0,2),3));
+    
+
+%% Ziv-Zakai bound computation
+computeZZB
+
+T_CRB_ZZB = table(CNosim(:), RMSE_LS(:), fZZLB_2SP(:), RMSE_DPE(:), fZZLB_DPE(:), ...
+                  'VariableNames', {'CN0_dBHz','RMSE_LS_m','fZZLB_2SP','RMSE_DPE', 'fZZLB_DPE'});
+disp(T_CRB_ZZB)
+
+% return
+%% PLOTS
+figure,
+h=semilogy(CNosim,RMSE_LS,'b-.',CNosim,RMSE_DPE,'b',CNosim,fZZLB_2SP,'r-.',CNosim,fZZLB_DPE,'r');
+legend('MLE 2SP','MLE DPE','ZZB 2SP','ZZB DPE', fontsize=16)
+grid
+set(h,'Linewidth',2)
+xlabel('CN0 [dB-Hz]')
+ylabel('RMSE [m]')
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function [sigen] = signalGen(gnss_input)
+
+CodePeriod = gnss_input.CodePeriod;
+CoherentIntegrations = gnss_input.CoherentIntegrations;
+NonCoherentIntegrations = gnss_input.NonCoherentIntegrations;
+Tc = gnss_input.Tc;
+fs = gnss_input.fs;
+fn = gnss_input.fn;
+order = gnss_input.order;
+numSV = gnss_input.numSV;
+SatPosition = gnss_input.SatPosition;
+UserPosition = gnss_input.UserPosition;
+c = gnss_input.c;
+SatPRN = gnss_input.SatPRN;
+
 %% number of samples calculation
 NsamplesLocal=CodePeriod*fs*CoherentIntegrations;   % Number of samples of the Local Replica
 NsamplesData=CodePeriod*fs*CoherentIntegrations*NonCoherentIntegrations;    %Number of samples of the Received Signal (Data).
+
+
+%% memory allocation
 Range=zeros(1,numSV);
 x_local=zeros(numSV,NsamplesLocal);
 fft_local=zeros(numSV,NsamplesLocal);
 x_delay=zeros(numSV,NsamplesData);
 
-% return
+
 %% Compute range and fractional delays for each SV
 
 for kSV=1:numSV 
@@ -154,113 +235,25 @@ sigen.fft_local = fft_local;
 sigen.randomDelay = randomDelay;
 sigen.NsamplesLocal = NsamplesLocal;
 sigen.NsamplesData = NsamplesData;
-sigen.estimateTrueNoise = 1;
-sigen.Nexpe = Nexpe;
-sigen.numSV = numSV;
 sigen.NonCoherentIntegrations = NonCoherentIntegrations;
 sigen.fs = fs;
 sigen.fn = fn;
 sigen.order = order;
-sigen.UserPosition = UserPosition;
-sigen.SatPosition = SatPosition;
-sigen.c = c;
-sigen.num2stepsIterations = num2stepsIterations;
-Tc=1/(n*1.023e6);                   % Chip time
-Ts=1/(2*m*1.023e6);
-sigen.Tc = Tc;
 
-%% DPE parameters (ARS)
-dpe_input.UserPosition;
-dpe_input.c = c;
-dpe_input.numSV = numSV;
-dpe_input.fs = fs;
-dpe_input.fn = fn;
-dpe_input.Tc = Tc;
-dpe_input.SatPosition = SatPosition;
-
-dpe_input.Niter=10000;
-dpe_input.gamma_est=zeros(3,Niter+1);
-dpe_input.amp_est = zeros(numSV, Niter+1);
-dpe_input.EstRxClkBias=zeros(1,Niter+1);
-dpe_input.contraction = 2;          % contraction parameter
-dpe_input.dmax = 10000;
-dpe_input.dmin = 0.01;
-dpe_input.dmax_clk=dt/10;
-dpe_input.dmin_clk=dt/100;
-dpe_input.NormalizaFactor = sqrt(NonCoherentIntegrations)*CoherentIntegrations*CodePeriod*fs;
-dpe_input.CN0_est_ind = 1;
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% sigen = signalGen(config);
-meanNoise = computeMeanNoise(sigen);
-% % return
-% config = 'ConfigFile';
-% eval(config)
-
-
-
-% return
-if simulate_mle
-    %% Start Simulation
-    for CNo_idx=1:length(CNosim)
-        CNosim(CNo_idx)
-        
-        for exp_idx=1:Nexpe
-            CNo=CNosim(CNo_idx)*ones(numSV,1);
-            
-            %% Signal + noise 
-            x = receivedSignal(sigen,CNo);
-            
-            %% Perform coherent/non-coherent integration times
-            r = correlateSignal(sigen,x);
-            
-            
-            %% 2-steps: Conventional approach estimation
-            PosErrLS(CNo_idx,exp_idx) = conv2stepsPVT(r,sigen);
-                                               
-            %% DPE approach ARS (accelerated random search)
-            [PosErrDPE(CNo_idx,exp_idx), CN0_est(CNo_idx,exp_idx)] = DPEarsPVT(r,dpe_input);
-
-        end
-    end
-    
-    % Compute RMSEs
-    RMSE_LS=sqrt(mean(PosErrLS.^2,2));
-    RMSE_DPE=sqrt(mean(PosErrDPE.^2,2));
-    averageCn0= (mean(mean(cn0,2),3));
-    
 end
 
-if compute_zzb
-    %% Ziv-Zakai bound computation
-    computeZZB
-end
-T_CRB_ZZB = table(CNosim(:), RMSE_LS(:), fZZLB_2SP(:), RMSE_DPE(:), fZZLB_DPE(:), ...
-                  'VariableNames', {'CN0_dBHz','RMSE_LS_m','fZZLB_2SP','RMSE_DPE', 'fZZLB_DPE'});
-disp(T_CRB_ZZB)
-
-return
-%% PLOTS
-figure,
-h=semilogy(CNosim,RMSE_LS,'b-.',CNosim,RMSE_DPE,'b',CNosim,fZZLB_2SP,'r-.',CNosim,fZZLB_DPE,'r');
-legend('MLE 2SP','MLE DPE','ZZB 2SP','ZZB DPE', fontsize=16)
-grid
-set(h,'Linewidth',2)
-xlabel('CN0 [dB-Hz]')
-ylabel('RMSE [m]')
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function meanNoise = computeMeanNoise(sigen)
 
 
 NsamplesData = sigen.NsamplesData;
-estimateTrueNoise = sigen.estimateTrueNoise;
+% estimateTrueNoise = sigen.estimateTrueNoise;
 Nexpe = sigen.Nexpe;
-NonCoherentIntegrations = sigen.NonCoherentIntegrations;
-if estimateTrueNoise == 0
-    meanNoise = nan;
-else
+
+% if estimateTrueNoise == 0
+%     meanNoise = nan;
+% else
     %% Add AWGN noise to the transmitted signals
     mean_noise=zeros(1,Nexpe);
     for exp_idx=1:Nexpe
@@ -270,7 +263,7 @@ else
     end
     meanNoise=mean(mean_noise);
 end
-end
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function x = receivedSignal(sigen, CNo)
@@ -333,16 +326,15 @@ end
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-function PosErrLS = conv2stepsPVT(r,sigen)
+function PosErrLS = conv2stepsPVT(r,ls_input)
 
-% %% load configuration file
-% eval(config)
-UserPosition = sigen.UserPosition;
-c = sigen.c;
-numSV = sigen.numSV;
-fs = sigen.fs;
-num2stepsIterations = sigen.num2stepsIterations;
-SatPosition = sigen.SatPosition;
+
+UserPosition = ls_input.UserPosition;
+c = ls_input.c;
+numSV = ls_input.numSV;
+fs = ls_input.fs;
+num2stepsIterations = ls_input.num2stepsIterations;
+SatPosition = ls_input.SatPosition;
 
 %% memory allocation
 EstRange=zeros(1,numSV);
@@ -399,9 +391,6 @@ fn = dpe_input.fn;
 Tc = dpe_input.Tc;
 SatPosition = dpe_input.SatPosition;
 Niter = dpe_input.Niter;
-gamma_est = dpe_input.gamma_est;
-amp_est = dpe_input.amp_est;
-EstRxClkBias = dpe_input.EstRxClkBias;
 contraction = dpe_input.contraction;
 dmax = dpe_input.dmax;
 dmin = dpe_input.dmin;
@@ -411,6 +400,9 @@ NormalizaFactor = dpe_input.NormalizaFactor;
 CN0_est_ind = dpe_input.CN0_est_ind;
 dt=1/fs;                            % Sampling period
 randomDelay = 0; %%% magic number....
+gamma_est=zeros(3,Niter+1);
+amp_est = zeros(numSV, Niter+1);
+EstRxClkBias=zeros(1,Niter+1);
 
 %% memory allocation
 EstRange=zeros(1,numSV);

@@ -44,7 +44,19 @@ fn=2e6;
 order=36;
 %% Scenario Parameters
 % Set GPS SVs and user positions
-load('SatPositions.mat')
+% load('SatPositions.mat')
+corrSatPosition = 1.0e+07 * [
+    2.061934439245598  -0.649651248625989   1.515031823419662
+    2.652937217353064   0.225144209072909   0.245090150841460
+   -0.036582056912767   1.531548249671478   2.204309909466485
+    1.031402024072278   1.611770455054111   1.801481566078742
+    1.660579169172477   0.314602454675085   2.047357395811576
+    1.986519610236877  -1.663607551240955   0.522461680298307
+   -0.265437875221575  -1.573610606389880   2.123719767033498
+   -0.948907876055638  -1.438620519096841   2.407317325333366
+    1.479532383323564   0.751773843931400   2.450026136317899
+    1.777572228593643   2.192914078898261   0.888480393951951
+];
 numSV=7;
 SatPosition=corrSatPosition(1:7, :);
 SatPRN=  [12    15    17    19    24    25    32 ];
@@ -66,29 +78,10 @@ estimateTrueNoise = 1;
 % Plot estimated CN0
 plot_estimated_cn0 = 1;
 
-%% 2-steps parameters
-% LS iterations
-num2stepsIterations = 10;
-
-%% DPE parameters (ARS)
-
-Niter=10000;
-gamma_est=zeros(3,Niter+1);
-amp_est = zeros(numSV, Niter+1);
-EstRxClkBias=zeros(1,Niter+1);
-% EstRxClkBias=dt*1.3;
-contraction = 2;          % contraction parameter
-dmax = 10000;
-dmin = 0.01;
-dmax_clk=dt/10;
-dmin_clk=dt/100;
 
 
-NormalizaFactor = sqrt(NonCoherentIntegrations)*CoherentIntegrations*CodePeriod*fs;
-CN0_est_ind = 1;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% number of samples calculation
-NsamplesLocal=CodePeriod*fs*CoherentIntegrations;   % Number of samples of the Local Replica
+
 
 
 
@@ -98,6 +91,7 @@ PosErrDPE=zeros(length(CNosim),Nexpe);
 CN0_est=zeros(length(CNosim),Nexpe);
 cn0= zeros(length(CNosim),numSV,Nexpe);
 %% memory allocation
+
 %% number of samples calculation
 NsamplesLocal=CodePeriod*fs*CoherentIntegrations;   % Number of samples of the Local Replica
 NsamplesData=CodePeriod*fs*CoherentIntegrations*NonCoherentIntegrations;    %Number of samples of the Received Signal (Data).
@@ -125,7 +119,6 @@ for kSV=1:numSV
     Tchip                                   =   CodePeriod / length(Code);
     ii                                      =   1 : NsamplesLocal;          % generating LGenBlocks samples
     x_local(kSV,:)                                 =   Code((1 + mod(round((ii - 1) / fs / Tchip), length(Code))));
-%     fft_local(kSV,:) = fft(x_local(kSV,:),Nsamples);
     ii                                      =   1 : NsamplesData;
     x_delay(kSV,:)                                 =   Code((1 + mod(round(PrevNCOIndex(kSV)+randomDelay+(ii - 1) / fs / Tchip), length(Code))));
 end
@@ -164,24 +157,26 @@ sigen.order = order;
 sigen.UserPosition = UserPosition;
 sigen.SatPosition = SatPosition;
 sigen.c = c;
-sigen.num2stepsIterations = num2stepsIterations;
 Tc=1/(n*1.023e6);                   % Chip time
 Ts=1/(2*m*1.023e6);
 sigen.Tc = Tc;
-
+%% 2-steps parameters
+% LS iterations
+ls_input.UserPosition = UserPosition;
+ls_input.SatPosition = SatPosition;
+ls_input.c = c;
+ls_input.numSV = numSV;
+ls_input.fs = fs;
+ls_input.num2stepsIterations = 10;
 %% DPE parameters (ARS)
-dpe_input.UserPosition;
+dpe_input.UserPosition = UserPosition;
 dpe_input.c = c;
 dpe_input.numSV = numSV;
 dpe_input.fs = fs;
 dpe_input.fn = fn;
 dpe_input.Tc = Tc;
 dpe_input.SatPosition = SatPosition;
-
 dpe_input.Niter=10000;
-dpe_input.gamma_est=zeros(3,Niter+1);
-dpe_input.amp_est = zeros(numSV, Niter+1);
-dpe_input.EstRxClkBias=zeros(1,Niter+1);
 dpe_input.contraction = 2;          % contraction parameter
 dpe_input.dmax = 10000;
 dpe_input.dmin = 0.01;
@@ -190,50 +185,37 @@ dpe_input.dmin_clk=dt/100;
 dpe_input.NormalizaFactor = sqrt(NonCoherentIntegrations)*CoherentIntegrations*CodePeriod*fs;
 dpe_input.CN0_est_ind = 1;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% sigen = signalGen(config);
 meanNoise = computeMeanNoise(sigen);
-% % return
-% config = 'ConfigFile';
-% eval(config)
 
 
-
-% return
-if simulate_mle
     %% Start Simulation
-    for CNo_idx=1:length(CNosim)
-        CNosim(CNo_idx)
-        
-        for exp_idx=1:Nexpe
-            CNo=CNosim(CNo_idx)*ones(numSV,1);
+for CNo_idx=1:length(CNosim)
+    CNosim(CNo_idx)
+    for exp_idx=1:Nexpe
+        CNo=CNosim(CNo_idx)*ones(numSV,1);
             
-            %% Signal + noise 
-            x = receivedSignal(sigen,CNo);
+        %% Signal + noise 
+        x = receivedSignal(sigen,CNo);
             
-            %% Perform coherent/non-coherent integration times
-            r = correlateSignal(sigen,x);
+        %% Perform coherent/non-coherent integration times
+        r = correlateSignal(sigen,x);
             
-            
-            %% 2-steps: Conventional approach estimation
-            PosErrLS(CNo_idx,exp_idx) = conv2stepsPVT(r,sigen);
+        %% 2-steps: Conventional approach estimation
+        PosErrLS(CNo_idx,exp_idx) = conv2stepsPVT(r,ls_input);
                                                
-            %% DPE approach ARS (accelerated random search)
-            [PosErrDPE(CNo_idx,exp_idx), CN0_est(CNo_idx,exp_idx)] = DPEarsPVT(r,dpe_input);
-
-        end
+        %% DPE approach ARS (accelerated random search)
+        [PosErrDPE(CNo_idx,exp_idx), CN0_est(CNo_idx,exp_idx)] = DPEarsPVT(r,dpe_input);
     end
-    
-    % Compute RMSEs
-    RMSE_LS=sqrt(mean(PosErrLS.^2,2));
-    RMSE_DPE=sqrt(mean(PosErrDPE.^2,2));
-    averageCn0= (mean(mean(cn0,2),3));
-    
 end
+% Compute RMSEs
+RMSE_LS=sqrt(mean(PosErrLS.^2,2));
+RMSE_DPE=sqrt(mean(PosErrDPE.^2,2));
+averageCn0= (mean(mean(cn0,2),3));
+    
 
-if compute_zzb
-    %% Ziv-Zakai bound computation
-    computeZZB
-end
+%% Ziv-Zakai bound computation
+computeZZB
+
 T_CRB_ZZB = table(CNosim(:), RMSE_LS(:), fZZLB_2SP(:), RMSE_DPE(:), fZZLB_DPE(:), ...
                   'VariableNames', {'CN0_dBHz','RMSE_LS_m','fZZLB_2SP','RMSE_DPE', 'fZZLB_DPE'});
 disp(T_CRB_ZZB)
@@ -333,16 +315,15 @@ end
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-function PosErrLS = conv2stepsPVT(r,sigen)
+function PosErrLS = conv2stepsPVT(r,ls_input)
 
-% %% load configuration file
-% eval(config)
-UserPosition = sigen.UserPosition;
-c = sigen.c;
-numSV = sigen.numSV;
-fs = sigen.fs;
-num2stepsIterations = sigen.num2stepsIterations;
-SatPosition = sigen.SatPosition;
+
+UserPosition = ls_input.UserPosition;
+c = ls_input.c;
+numSV = ls_input.numSV;
+fs = ls_input.fs;
+num2stepsIterations = ls_input.num2stepsIterations;
+SatPosition = ls_input.SatPosition;
 
 %% memory allocation
 EstRange=zeros(1,numSV);
@@ -399,9 +380,6 @@ fn = dpe_input.fn;
 Tc = dpe_input.Tc;
 SatPosition = dpe_input.SatPosition;
 Niter = dpe_input.Niter;
-gamma_est = dpe_input.gamma_est;
-amp_est = dpe_input.amp_est;
-EstRxClkBias = dpe_input.EstRxClkBias;
 contraction = dpe_input.contraction;
 dmax = dpe_input.dmax;
 dmin = dpe_input.dmin;
@@ -411,6 +389,9 @@ NormalizaFactor = dpe_input.NormalizaFactor;
 CN0_est_ind = dpe_input.CN0_est_ind;
 dt=1/fs;                            % Sampling period
 randomDelay = 0; %%% magic number....
+gamma_est=zeros(3,Niter+1);
+amp_est = zeros(numSV, Niter+1);
+EstRxClkBias=zeros(1,Niter+1);
 
 %% memory allocation
 EstRange=zeros(1,numSV);
